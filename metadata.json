@@ -1,0 +1,5 @@
+{
+  "name": "docwallet",
+  "description": "A zero-cost MVP financial tracking SaaS for medical professionals using Telegram and Gemini AI.",
+  "requestFramePermissions": []
+}
