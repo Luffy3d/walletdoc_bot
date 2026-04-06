@@ -2,31 +2,29 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase (Server-side)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// CRITICAL FIX 1: Tell Vercel never to cache this route
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
-    console.log('Telegram payload:', JSON.stringify(payload, null, 2));
+    // CRITICAL FIX 2: Move initialization inside the POST handler 
+    // so Vercel reads the keys at RUNTIME, not build time.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    if (!payload.message) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+    const payload = await req.json();
+
+    if (!payload.message || !payload.message.text) {
       return NextResponse.json({ ok: true });
     }
 
     const chatId = payload.message.chat.id;
     const text = payload.message.text;
 
-    if (!text) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const sendTelegramMessage = async (msg: string) => {
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
@@ -36,7 +34,7 @@ export async function POST(req: Request) {
     };
 
     if (text === '/start') {
-      await sendTelegramMessage(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.\n\nOnce linked, you can send me your expenses or income (e.g., "Spent 500 on medical supplies") and I will track it for you.`);
+      await sendTelegramMessage(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.\n\nOnce linked, you can send me your expenses or income (e.g., "Spent ₹500 on medical supplies") and I will track it for you.`);
       return NextResponse.json({ ok: true });
     }
 
@@ -46,7 +44,7 @@ export async function POST(req: Request) {
       Extract financial transaction details from the following text: "${text}"
       Return ONLY a JSON object with these fields:
       - amount (number)
-      - type (string, either "Income" or "Expense")
+      - type (string, strictly either "Income" or "Expense")
       - category (string)
       - entity_source (string)
 
@@ -61,13 +59,18 @@ export async function POST(req: Request) {
     // Clean up markdown if Gemini returns it
     jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
     
-    const parsedData = JSON.parse(jsonText || '{}');
-    console.log('Parsed data:', parsedData);
+    let parsedData;
+    try {
+        parsedData = JSON.parse(jsonText);
+    } catch (e) {
+        await sendTelegramMessage('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies"');
+        return NextResponse.json({ ok: true });
+    }
 
     // Find user based on telegram_chat_id
     let { data: device } = await supabase
       .from('telegram_devices')
-      .select('user_id, users(email)')
+      .select('user_id')
       .eq('telegram_chat_id', chatId)
       .single();
 
@@ -90,7 +93,7 @@ export async function POST(req: Request) {
 
     if (txError) {
       console.error('Supabase error:', txError);
-      await sendTelegramMessage('Sorry, I couldn\'t save that transaction. Please try again.');
+      await sendTelegramMessage('Sorry, I couldn\'t save that transaction. Please check your dashboard.');
     } else {
       await sendTelegramMessage(`✅ *Transaction Saved!*\n\n*Type:* ${parsedData.type}\n*Amount:* ₹${parsedData.amount}\n*Category:* ${parsedData.category}\n*Source:* ${parsedData.entity_source}`);
     }
@@ -98,6 +101,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Error handling telegram webhook:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    // Returning 200 OK prevents Telegram from infinitely retrying crashed messages
+    return NextResponse.json({ ok: true }); 
   }
 }
