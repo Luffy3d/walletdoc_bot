@@ -18,12 +18,13 @@ export default function DashboardPage() {
     checkUserAndFetchData()
   }, [])
 
-  const checkUserAndFetchData = async () => {
+const checkUserAndFetchData = async () => {
     // 1. Check if user is logged in securely
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError || !user) {
-      // If not logged in, send them to the login page you just moved
+      // STOP the loading spinner before redirecting
+      setLoading(false) 
       router.push('/login')
       return
     }
