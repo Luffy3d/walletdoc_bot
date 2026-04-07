@@ -1,171 +1,104 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Loader2, Trash2, Edit2, LogOut, Wallet } from 'lucide-react'
+import { Wallet, Mail, Loader2, CheckCircle2 } from 'lucide-react'
+import { motion } from 'framer-motion'
 
-export default function DashboardPage() {
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  
-  const router = useRouter()
-  // Uses your exact local Supabase setup to prevent Vercel errors
+export default function LoginPage() {
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const supabase = createClient()
 
-  useEffect(() => {
-    checkUserAndFetchData()
-  }, [])
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
 
-const checkUserAndFetchData = async () => {
-    // 1. Check if user is logged in securely
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      // STOP the loading spinner before redirecting
-      setLoading(false) 
-      router.push('/login')
-      return
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+
+    if (error) {
+      setMessage({ type: 'error', text: error.message })
+    } else {
+      setMessage({ type: 'success', text: 'Check your email for the magic link!' })
     }
-
-    setUserEmail(user.email || '')
-
-    // 2. Fetch only their transactions
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-
-    if (data) setTransactions(data)
     setLoading(false)
   }
 
-  const handleDelete = async (id: string) => {
-    const confirmDelete = window.confirm("Are you sure you want to delete this transaction?")
-    if (!confirmDelete) return
-
-    const { error } = await supabase.from("transactions").delete().eq("id", id)
-    
-    if (error) {
-      alert("Error deleting transaction: " + error.message)
-    } else {
-      setTransactions(transactions.filter((tx) => tx.id !== id))
-    }
-  }
-
-  const handleEditAmount = async (id: string, currentAmount: number) => {
-    const newAmount = window.prompt("Enter new amount in ₹:", currentAmount.toString())
-    if (!newAmount || isNaN(Number(newAmount))) return
-
-    const { error } = await supabase
-      .from("transactions")
-      .update({ amount: Number(newAmount) })
-      .eq("id", id)
-
-    if (error) {
-      alert("Error updating transaction: " + error.message)
-    } else {
-      checkUserAndFetchData() // Refresh list immediately
-    }
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="mx-auto max-w-5xl">
-        {/* Header */}
-        <div className="mb-8 flex items-center justify-between rounded-2xl bg-white p-6 shadow-sm border border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md">
-              <Wallet size={20} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">docwallet Dashboard</h1>
-              <p className="text-sm text-slate-500">{userEmail}</p>
-            </div>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50"
+      >
+        <div className="text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+            <Wallet size={28} />
           </div>
-          <button 
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
-          >
-            <LogOut size={16} />
-            Sign Out
-          </button>
+          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">Welcome to docwallet</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Enter your email to receive a magic link for secure login.
+          </p>
         </div>
 
-        {/* Transactions Table */}
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm border border-slate-200">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="p-4 font-semibold text-slate-600">Type</th>
-                  <th className="p-4 font-semibold text-slate-600">Category</th>
-                  <th className="p-4 font-semibold text-slate-600">Source</th>
-                  <th className="p-4 font-semibold text-slate-600">Amount</th>
-                  <th className="p-4 text-right font-semibold text-slate-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-500">
-                      No transactions yet. Send a message to your Telegram bot to log your first expense!
-                    </td>
-                  </tr>
-                ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="transition-colors hover:bg-slate-50/50">
-                      <td className="p-4">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          tx.type === 'Income' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {tx.type}
-                        </span>
-                      </td>
-                      <td className="p-4 font-medium text-slate-700">{tx.category}</td>
-                      <td className="p-4 text-slate-500">{tx.entity_source || '-'}</td>
-                      <td className="p-4 font-semibold text-slate-900">₹{tx.amount}</td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button 
-                            onClick={() => handleEditAmount(tx.id, tx.amount)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                            title="Edit Amount"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(tx.id)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                            title="Delete Transaction"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          <div className="space-y-2">
+            <label htmlFor="email-address" className="text-sm font-medium text-slate-700">
+              Email address
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Mail className="h-5 w-5 text-slate-400" aria-hidden="true" />
+              </div>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                placeholder="doctor@hospital.com"
+              />
+            </div>
           </div>
-        </div>
-      </div>
+
+          {message && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={`flex items-center gap-2 rounded-xl p-4 text-sm ${
+                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              {message.type === 'success' && <CheckCircle2 className="h-5 w-5" />}
+              {message.text}
+            </motion.div>
+          )}
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative flex w-full justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 active:scale-[0.98]"
+            >
+              {loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                'Send Magic Link'
+              )}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   )
 }
