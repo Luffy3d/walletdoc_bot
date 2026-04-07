@@ -1,107 +1,107 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// CRITICAL FIX 1: Tell Vercel never to cache this route
-export const dynamic = 'force-dynamic';
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
-    // CRITICAL FIX 2: Move initialization inside the POST handler 
-    // so Vercel reads the keys at RUNTIME, not build time.
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+    const payload = await req.json();
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
-    const payload = await req.json();
-
-    if (!payload.message || !payload.message.text) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const chatId = payload.message.chat.id;
-    const text = payload.message.text;
-
-    const sendTelegramMessage = async (msg: string) => {
+    // --- 1. DASHBOARD CONFIRMATION TRIGGER ---
+    if (payload.action === 'confirm_link') {
+      const { chatId, userEmail } = payload;
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `✅ *Link Confirmed!*\n\nWelcome to *docwallet*. Your Telegram account is now linked to ${userEmail}.\n\nType /profile to see your details or /summary for reports.`,
+          parse_mode: 'Markdown'
+        }),
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    const message = payload.message;
+    if (!message) return NextResponse.json({ ok: true });
+
+    const chatId = message.chat.id.toString(); // Convert to string for 'tci'
+    const text = message.text?.toLowerCase();
+
+    const sendBotMsg = async (msg: string, markup?: any) => {
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: markup }),
       });
     };
 
+    // --- 2. COMMAND: /START ---
     if (text === '/start') {
-      await sendTelegramMessage(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.\n\nOnce linked, you can send me your expenses or income (e.g., "Spent ₹500 on medical supplies") and I will track it for you.`);
+      await sendBotMsg(`🩺 *Welcome to docwallet*\n\nYour Chat ID: \`${chatId}\`\n\nEnter this on your website dashboard to link your account.`);
       return NextResponse.json({ ok: true });
     }
 
-    // Use Gemini to parse the text
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const prompt = `
-      Extract financial transaction details from the following text: "${text}"
-      Return ONLY a JSON object with these fields:
-      - amount (number)
-      - type (string, strictly either "Income" or "Expense")
-      - category (string)
-      - entity_source (string)
+    // --- 3. COMMAND: /PROFILE & PHONE CAPTURE ---
+    if (text === '/profile' || message.contact) {
+      const { data: user } = await supabase.from('users').select('*').eq('tci', chatId).single();
+      
+      if (!user) {
+        await sendBotMsg("⚠️ Please link your Chat ID on the web dashboard first.");
+      } else if (message.contact) {
+        await supabase.from('users').update({ phone_number: message.contact.phone_number }).eq('tci', chatId);
+        await sendBotMsg("✅ Phone number verified and saved to your profile!");
+      } else if (!user.phone_number) {
+        await sendBotMsg("📱 Your profile is missing a phone number. Tap below to share it securely.", {
+          keyboard: [[{ text: "📱 Share My Number", request_contact: true }]],
+          resize_keyboard: true, one_time_keyboard: true
+        });
+      } else {
+        await sendBotMsg(`👤 *Profile Summary*\nName: ${user.full_name || 'Doctor'}\nReg ID: ${user.doctor_reg_id || 'N/A'}\nPhone: ${user.phone_number}\nStatus: Verified ✅`);
+      }
+      return NextResponse.json({ ok: true });
+    }
 
-      If the text is ambiguous, make your best guess.
-      Example output: {"amount": 500, "type": "Expense", "category": "Supplies", "entity_source": "Pharmacy"}
+    // --- 4. COMMAND: /SUMMARY ---
+    if (text === '/summary') {
+      await sendBotMsg("📊 *Select a report:*", {
+        inline_keyboard: [
+          [{ text: "📅 Last 7 Days Summary", callback_data: "report_week" }],
+          [{ text: "⛽ Fuel Expense Total", callback_data: "report_fuel" }],
+          [{ text: "💰 Monthly Income", callback_data: "report_income" }]
+        ]
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- 5. AI TRANSACTION LOGGING ---
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `
+      Extract financial data from: "${message.text}"
+      Current Date: ${new Date().toLocaleDateString('en-IN')}
+      Return JSON ONLY: { "amount": number, "type": "Income"|"Expense", "category": string, "date": "YYYY-MM-DD", "description": string }
     `;
 
     const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let jsonText = response.text();
-    
-    // Clean up markdown if Gemini returns it
-    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    let parsedData;
-    try {
-        parsedData = JSON.parse(jsonText);
-    } catch (e) {
-        await sendTelegramMessage('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies"');
-        return NextResponse.json({ ok: true });
-    }
+    const data = JSON.parse(result.response.text().replace(/```json|```/g, ""));
 
-    // Find user based on telegram_chat_id
-    let { data: device } = await supabase
-      .from('telegram_devices')
-      .select('user_id')
-      .eq('telegram_chat_id', chatId)
-      .single();
-
-    let userId = device?.user_id;
-
-    if (!userId) {
-      await sendTelegramMessage('❌ *Account Not Linked*\n\nPlease log in to the docwallet dashboard and link your Telegram account to start tracking transactions.');
-      return NextResponse.json({ ok: true });
-    }
-
-    // Insert transaction
-    const { error: txError } = await supabase.from('transactions').insert([{
-      user_id: userId,
-      type: parsedData.type,
-      amount: parsedData.amount,
-      category: parsedData.category,
-      entity_source: parsedData.entity_source,
-      raw_text: text
+    // Save to 'transactions' table with the 'tci' link
+    const { error } = await supabase.from('transactions').insert([{ 
+      ...data, 
+      tci: chatId 
     }]);
 
-    if (txError) {
-      console.error('Supabase error:', txError);
-      await sendTelegramMessage('Sorry, I couldn\'t save that transaction. Please check your dashboard.');
-    } else {
-      await sendTelegramMessage(`✅ *Transaction Saved!*\n\n*Type:* ${parsedData.type}\n*Amount:* ₹${parsedData.amount}\n*Category:* ${parsedData.category}\n*Source:* ${parsedData.entity_source}`);
-    }
+    if (error) throw error;
+
+    await sendBotMsg(`📝 *Logged:* ${data.type} of ₹${data.amount} for ${data.category} on ${data.date}.`);
 
     return NextResponse.json({ ok: true });
+
   } catch (error) {
-    console.error('Error handling telegram webhook:', error);
-    // Returning 200 OK prevents Telegram from infinitely retrying crashed messages
-    return NextResponse.json({ ok: true }); 
+    console.error("Bot Error:", error);
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
