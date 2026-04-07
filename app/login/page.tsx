@@ -1,107 +1,108 @@
-import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createClient } from '@supabase/supabase-js';
+'use client'
 
-// CRITICAL FIX 1: Tell Vercel never to cache this route
-export const dynamic = 'force-dynamic';
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Wallet, Mail, Loader2, CheckCircle2 } from 'lucide-react'
+import { motion } from 'framer-motion'
 
-export async function POST(req: Request) {
-  try {
-    // CRITICAL FIX 2: Move initialization inside the POST handler 
-    // so Vercel reads the keys at RUNTIME, not build time.
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+export default function LoginPage() {
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const supabase = createClient()
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
 
-    const payload = await req.json();
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
 
-    if (!payload.message || !payload.message.text) {
-      return NextResponse.json({ ok: true });
-    }
-
-    const chatId = payload.message.chat.id;
-    const text = payload.message.text;
-
-    const sendTelegramMessage = async (msg: string) => {
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
-      });
-    };
-
-    if (text === '/start') {
-      await sendTelegramMessage(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.\n\nOnce linked, you can send me your expenses or income (e.g., "Spent ₹500 on medical supplies") and I will track it for you.`);
-      return NextResponse.json({ ok: true });
-    }
-
-    // Use Gemini to parse the text
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const prompt = `
-      Extract financial transaction details from the following text: "${text}"
-      Return ONLY a JSON object with these fields:
-      - amount (number)
-      - type (string, strictly either "Income" or "Expense")
-      - category (string)
-      - entity_source (string)
-
-      If the text is ambiguous, make your best guess.
-      Example output: {"amount": 500, "type": "Expense", "category": "Supplies", "entity_source": "Pharmacy"}
-    `;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let jsonText = response.text();
-    
-    // Clean up markdown if Gemini returns it
-    jsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    let parsedData;
-    try {
-        parsedData = JSON.parse(jsonText);
-    } catch (e) {
-        await sendTelegramMessage('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies"');
-        return NextResponse.json({ ok: true });
-    }
-
-    // Find user based on telegram_chat_id
-    let { data: device } = await supabase
-      .from('telegram_devices')
-      .select('user_id')
-      .eq('telegram_chat_id', chatId)
-      .single();
-
-    let userId = device?.user_id;
-
-    if (!userId) {
-      await sendTelegramMessage('❌ *Account Not Linked*\n\nPlease log in to the docwallet dashboard and link your Telegram account to start tracking transactions.');
-      return NextResponse.json({ ok: true });
-    }
-
-    // Insert transaction
-    const { error: txError } = await supabase.from('transactions').insert([{
-      user_id: userId,
-      type: parsedData.type,
-      amount: parsedData.amount,
-      category: parsedData.category,
-      entity_source: parsedData.entity_source,
-      raw_text: text
-    }]);
-
-    if (txError) {
-      console.error('Supabase error:', txError);
-      await sendTelegramMessage('Sorry, I couldn\'t save that transaction. Please check your dashboard.');
+    if (error) {
+      setMessage({ type: 'error', text: error.message })
     } else {
-      await sendTelegramMessage(`✅ *Transaction Saved!*\n\n*Type:* ${parsedData.type}\n*Amount:* ₹${parsedData.amount}\n*Category:* ${parsedData.category}\n*Source:* ${parsedData.entity_source}`);
+      setMessage({ type: 'success', text: 'Check your email for the magic link!' })
     }
-
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error('Error handling telegram webhook:', error);
-    // Returning 200 OK prevents Telegram from infinitely retrying crashed messages
-    return NextResponse.json({ ok: true }); 
+    setLoading(false)
   }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50"
+      >
+        <div className="text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+            <Wallet size={28} />
+          </div>
+          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">Welcome to docwallet</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Enter your email to receive a magic link for secure login.
+          </p>
+        </div>
+
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          <div className="space-y-2">
+            <label htmlFor="email-address" className="text-sm font-medium text-slate-700">
+              Email address
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Mail className="h-5 w-5 text-slate-400" aria-hidden="true" />
+              </div>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                placeholder="doctor@hospital.com"
+              />
+            </div>
+          </div>
+
+          {message && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={`flex items-center gap-2 rounded-xl p-4 text-sm ${
+                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              {message.type === 'success' && <CheckCircle2 className="h-5 w-5" />}
+              {message.text}
+            </motion.div>
+          )}
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative flex w-full justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 active:scale-[0.98]"
+            >
+              {loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                'Send Magic Link'
+              )}
+            </button>
+          </div>
+        </form>
+
+        <div className="text-center text-xs text-slate-400">
+          Secure authentication powered by Supabase.
+        </div>
+      </motion.div>
+    </div>
+  )
 }
