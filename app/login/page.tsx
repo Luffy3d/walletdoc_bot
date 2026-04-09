@@ -2,31 +2,48 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Wallet, Mail, Loader2, CheckCircle2 } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { Wallet, Mail, Loader2, CheckCircle2, User, Phone } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function LoginPage() {
+  const [isSignUp, setIsSignUp] = useState(false)
   const [email, setEmail] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [mobile, setMobile] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  
   const supabase = createClient()
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
+    // Set up the options. If they are signing up, we attach their Name and Mobile to their Supabase profile data.
+    const authOptions: any = {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    }
+
+    if (isSignUp) {
+      authOptions.data = {
+        full_name: fullName,
+        mobile_number: mobile,
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: authOptions,
     })
 
     if (error) {
       setMessage({ type: 'error', text: error.message })
     } else {
-      setMessage({ type: 'success', text: 'Check your email for the magic link!' })
+      setMessage({ 
+        type: 'success', 
+        text: `Check your email for the magic link to ${isSignUp ? 'create your account' : 'log in'}!` 
+      })
     }
     setLoading(false)
   }
@@ -42,13 +59,65 @@ export default function LoginPage() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
             <Wallet size={28} />
           </div>
-          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">Welcome to docwallet</h2>
+          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
+            {isSignUp ? 'Create an account' : 'Welcome back'}
+          </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Enter your email to receive a magic link for secure login.
+            {isSignUp ? 'Enter your details to get started with docwallet.' : 'Enter your email to receive a magic link for secure login.'}
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+        <form className="mt-8 space-y-4" onSubmit={handleAuth}>
+          <AnimatePresence mode="popLayout">
+            {isSignUp && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -10 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -10 }}
+                className="space-y-4 overflow-hidden"
+              >
+                {/* Full Name Input */}
+                <div className="space-y-2">
+                  <label htmlFor="full-name" className="text-sm font-medium text-slate-700">Full Name</label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <User className="h-5 w-5 text-slate-400" aria-hidden="true" />
+                    </div>
+                    <input
+                      id="full-name"
+                      type="text"
+                      required={isSignUp}
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                      placeholder="Dr. John Doe"
+                    />
+                  </div>
+                </div>
+
+                {/* Mobile Number Input */}
+                <div className="space-y-2">
+                  <label htmlFor="mobile" className="text-sm font-medium text-slate-700">Mobile Number</label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <Phone className="h-5 w-5 text-slate-400" aria-hidden="true" />
+                    </div>
+                    <input
+                      id="mobile"
+                      type="tel"
+                      required={isSignUp}
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                      placeholder="+91 98765 43210"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Email Input (Always Visible) */}
           <div className="space-y-2">
             <label htmlFor="email-address" className="text-sm font-medium text-slate-700">
               Email address
@@ -59,7 +128,6 @@ export default function LoginPage() {
               </div>
               <input
                 id="email-address"
-                name="email"
                 type="email"
                 autoComplete="email"
                 required
@@ -84,7 +152,7 @@ export default function LoginPage() {
             </motion.div>
           )}
 
-          <div>
+          <div className="pt-2">
             <button
               type="submit"
               disabled={loading}
@@ -93,15 +161,25 @@ export default function LoginPage() {
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                'Send Magic Link'
+                isSignUp ? 'Send Sign Up Link' : 'Send Magic Link'
               )}
             </button>
           </div>
         </form>
 
-        <div className="text-center text-xs text-slate-400">
-          Secure authentication powered by Supabase.
+        {/* Toggle Button */}
+        <div className="text-center mt-6">
+          <button 
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setMessage(null)
+            }}
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
+          >
+            {isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up"}
+          </button>
         </div>
+
       </motion.div>
     </div>
   )
