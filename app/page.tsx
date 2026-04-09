@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { 
   Wallet, TrendingUp, TrendingDown, Search, Filter, 
-  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download 
+  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload 
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -13,8 +13,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -32,8 +34,8 @@ export default function DashboardPage() {
       return
     }
 
+    setUserId(user.id)
     setUserEmail(user.email || '')
-    // Grab the full name from the secure metadata!
     setUserName(user.user_metadata?.full_name || null)
 
     const { data, error } = await supabase
@@ -80,6 +82,7 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
+  // --- EXPORT FUNCTION ---
   const handleExportCSV = () => {
     if (transactions.length === 0) {
       alert("No transactions to export!");
@@ -87,14 +90,12 @@ export default function DashboardPage() {
     }
 
     const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
-    
     const csvRows = transactions.map(tx => {
       const date = new Date(tx.created_at).toLocaleDateString('en-GB');
       return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
     });
 
     const csvContent = [headers.join(','), ...csvRows].join('\n');
-    
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -103,6 +104,82 @@ export default function DashboardPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  }
+
+  // --- NEW IMPORT FUNCTION ---
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !userId) return
+
+    // Reset input so they can upload the same file again if they want
+    if (fileInputRef.current) fileInputRef.current.value = ''
+
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const text = e.target?.result as string
+      if (!text) return
+
+      // Split into rows and remove empty lines
+      const lines = text.split('\n').filter(line => line.trim() !== '')
+      if (lines.length < 2) {
+        alert("The CSV file seems to be empty.")
+        return
+      }
+
+      // Skip the header row (index 0)
+      const dataRows = lines.slice(1)
+      const newTransactions = []
+
+      for (const row of dataRows) {
+        // Smart split that ignores commas inside quotes
+        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim())
+        
+        // Ensure row has Date, Type, Category, Source, Amount
+        if (cols.length >= 5 && cols[4] !== '') {
+          
+          // Try to parse the UK format date (DD/MM/YYYY) back into a standard format
+          let createdAt = new Date().toISOString()
+          const dateParts = cols[0].split('/')
+          if (dateParts.length === 3) {
+            // Convert to YYYY-MM-DD
+            const parsedDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
+            if (!isNaN(parsedDate.getTime())) {
+              createdAt = parsedDate.toISOString()
+            }
+          }
+
+          newTransactions.push({
+            user_id: userId,
+            type: cols[1] === 'Income' ? 'Income' : 'Expense',
+            category: cols[2] || 'Uncategorized',
+            entity_source: cols[3] || null,
+            amount: Number(cols[4]),
+            created_at: createdAt,
+            raw_text: "Imported via CSV"
+          })
+        }
+      }
+
+      if (newTransactions.length > 0) {
+        setLoading(true)
+        // Bulk insert all rows at once into Supabase
+        const { error } = await supabase.from('transactions').insert(newTransactions)
+        
+        if (error) {
+          alert("Error importing transactions: " + error.message)
+          setLoading(false)
+        } else {
+          alert(`✅ Successfully imported ${newTransactions.length} transactions!`)
+          // Refresh the dashboard to show the new data
+          checkUserAndFetchData()
+        }
+      } else {
+        alert("Could not read any valid transactions. Please make sure it matches the docwallet Export format.")
+      }
+    }
+    
+    // Trigger the file reading
+    reader.readAsText(file)
   }
 
   // Calculate Totals
@@ -135,12 +212,9 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-slate-900">docwallet</h1>
         </div>
         <div className="flex items-center gap-4">
-          
-          {/* UPDATED: Dynamic Name Greeting */}
           <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-4 py-2 rounded-full">
             <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
           </div>
-
           <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
             <RefreshCw size={16} /> Refresh
           </button>
@@ -188,6 +262,25 @@ export default function DashboardPage() {
               />
             </div>
             
+            {/* HIDDEN FILE INPUT */}
+            <input 
+              type="file" 
+              accept=".csv" 
+              ref={fileInputRef}
+              onChange={handleImportCSV} 
+              className="hidden" 
+              id="csv-upload" 
+            />
+            
+            {/* IMPORT BUTTON */}
+            <label 
+              htmlFor="csv-upload"
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <Upload size={16} /> Import
+            </label>
+
+            {/* EXPORT BUTTON */}
             <button 
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
@@ -195,9 +288,6 @@ export default function DashboardPage() {
               <Download size={16} /> Export
             </button>
             
-            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-              <Filter size={16} /> Filter
-            </button>
           </div>
         </div>
 
