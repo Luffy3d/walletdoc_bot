@@ -9,7 +9,6 @@ export async function POST(req: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    // We are using the Service Role Key here, which gives us admin access to read/update user profiles!
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -17,23 +16,34 @@ export async function POST(req: Request) {
 
     const payload: any = await req.json();
 
-    if (!payload.message || !payload.message.text) {
+    // 1. We must allow both text messages AND contact sharing messages
+    if (!payload.message) {
       return NextResponse.json({ ok: true });
     }
 
     const chatId = payload.message.chat.id.toString();
-    const text = payload.message.text;
+    const text = payload.message.text || '';
     const lowerText = text.toLowerCase();
+    const contact = payload.message.contact;
 
-    const sendBotMsg = async (msg: string) => {
+    // Ignore stickers, images, etc.
+    if (!text && !contact) {
+      return NextResponse.json({ ok: true }); 
+    }
+
+    // 2. Upgraded message sender that supports custom keyboards
+    const sendBotMsg = async (msg: string, replyMarkup?: any) => {
+      const body: any = { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
+      if (replyMarkup) {
+        body.reply_markup = replyMarkup;
+      }
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
+        body: JSON.stringify(body),
       });
     };
 
-    // 1. FIRST check if the device is linked
     let { data: device } = await supabase
       .from('telegram_devices')
       .select('user_id')
@@ -42,54 +52,49 @@ export async function POST(req: Request) {
 
     let userId = device?.user_id;
 
+    // --- NEW: HANDLE INCOMING CONTACT SHARE ---
+    if (contact && userId) {
+      // Telegram separates first and last name, so we combine them
+      const newName = [contact.first_name, contact.last_name].filter(Boolean).join(' ');
+      const newMobile = contact.phone_number;
+      
+      // Update the user's secure metadata in Supabase
+      await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: { full_name: newName, mobile_number: newMobile }
+      });
+      
+      // Send success message and REMOVE the popup keyboard
+      await sendBotMsg(`✅ Profile updated perfectly, *${newName}*!\n\nYou can now start logging transactions. Try saying "Spent ₹500 on fuel".`, { remove_keyboard: true });
+      return NextResponse.json({ ok: true });
+    }
+
     // --- /START COMMAND LOGIC ---
     if (lowerText === '/start') {
       if (!userId) {
-        // Unlinked User Welcome
         await sendBotMsg(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.`);
       } else {
-        // Linked User Welcome - Fetch their profile data securely using admin auth
-        const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+        const { data: userData } = await supabase.auth.admin.getUserById(userId);
         const fullName = userData?.user?.user_metadata?.full_name;
         
         if (fullName) {
-          await sendBotMsg(`Welcome back, *${fullName}*! 👋\n\nI'm ready to log your transactions. Just text me what you spent or earned (e.g., "Paid ₹500 for lunch").\n\n*Available Commands:*\n📊 /summary - Current month totals\n🕒 /recent - Last 5 transactions\n↩️ /undo - Delete the last entry`);
+          await sendBotMsg(`Welcome back, *${fullName}*! 👋\n\nI'm ready to log your transactions. Just text me what you spent or earned.\n\n*Available Commands:*\n📊 /summary - Current month totals\n🕒 /recent - Last 5 transactions\n↩️ /undo - Delete the last entry`);
         } else {
-          await sendBotMsg(`Welcome back! 👋\n\nI noticed your profile is incomplete. To update your name and phone number, please reply in this exact format:\n\n\`/profile Your Name, Your Number\`\n\n*(Example: /profile Dr. John, 9876543210)*`);
+          // --- NEW: SEND THE "SHARE CONTACT" BUTTON ---
+          await sendBotMsg(`Welcome back! 👋\n\nI noticed your profile is incomplete. Please tap the button below to securely share your name and number so I can update your account.`, {
+            keyboard: [[{ text: "📱 Share My Contact Info", request_contact: true }]],
+            resize_keyboard: true,
+            one_time_keyboard: true
+          });
         }
       }
       return NextResponse.json({ ok: true });
     }
 
-    // Stop unlinked users from running any other commands
     if (!userId) {
       await sendBotMsg('❌ *Account Not Linked*\n\nPlease log in to the docwallet dashboard and link your Telegram account to start tracking transactions.');
       return NextResponse.json({ ok: true });
     }
 
-    // --- /PROFILE COMMAND (To update missing name/number) ---
-    if (lowerText.startsWith('/profile')) {
-      // Remove the command part to just get the data
-      const profileData = text.replace('/profile', '').trim();
-      const parts = profileData.split(',');
-
-      if (parts.length >= 2) {
-        const newName = parts[0].trim();
-        const newMobile = parts[1].trim();
-        
-        // Update the user's secure metadata in Supabase
-        await supabase.auth.admin.updateUserById(userId, {
-          user_metadata: { full_name: newName, mobile_number: newMobile }
-        });
-        
-        await sendBotMsg(`✅ Profile updated perfectly, *${newName}*!\n\nYou can now start logging transactions. Try saying "Spent ₹500 on fuel".`);
-      } else {
-        await sendBotMsg(`⚠️ Please use the exact format:\n\`/profile Name, Number\``);
-      }
-      return NextResponse.json({ ok: true });
-    }
-
-    // --- /UNDO COMMAND ---
     if (lowerText === '/undo') {
       const { data: lastTx } = await supabase
         .from('transactions')
@@ -108,7 +113,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- /SUMMARY COMMAND (Current Month) ---
     if (lowerText === '/summary') {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -134,7 +138,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- /RECENT COMMAND (Last 5 Transactions) ---
     if (lowerText === '/recent') {
       const { data: recentTx } = await supabase
         .from('transactions')
@@ -158,7 +161,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- AI EXTRACTION (With 503 Error Handling) ---
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const prompt = `
       Extract ALL financial transaction details from the following text: "${text}"
