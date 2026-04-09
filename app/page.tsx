@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { 
   Wallet, TrendingUp, TrendingDown, Search, Filter, 
-  RefreshCw, LogOut, Trash2, Edit2, Loader2 
+  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download 
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -75,6 +75,37 @@ export default function DashboardPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  // --- NEW EXPORT FUNCTION ---
+  const handleExportCSV = () => {
+    if (transactions.length === 0) {
+      alert("No transactions to export!");
+      return;
+    }
+
+    // 1. Create CSV Headers
+    const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
+    
+    // 2. Map data to CSV rows
+    const csvRows = transactions.map(tx => {
+      const date = new Date(tx.created_at).toLocaleDateString('en-GB');
+      // Wrap text in quotes to prevent commas in categories from breaking the columns
+      return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
+    });
+
+    // 3. Combine headers and rows
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    
+    // 4. Trigger the download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `docwallet_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   // Calculate Totals
@@ -156,7 +187,16 @@ export default function DashboardPage() {
                 className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">
+            
+            {/* NEW EXPORT BUTTON */}
+            <button 
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <Download size={16} /> Export
+            </button>
+            
+            <button className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
               <Filter size={16} /> Filter
             </button>
           </div>
