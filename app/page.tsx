@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   
   const router = useRouter()
@@ -32,6 +33,8 @@ export default function DashboardPage() {
     }
 
     setUserEmail(user.email || '')
+    // Grab the full name from the secure metadata!
+    setUserName(user.user_metadata?.full_name || null)
 
     const { data, error } = await supabase
       .from("transactions")
@@ -77,27 +80,21 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
-  // --- NEW EXPORT FUNCTION ---
   const handleExportCSV = () => {
     if (transactions.length === 0) {
       alert("No transactions to export!");
       return;
     }
 
-    // 1. Create CSV Headers
     const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
     
-    // 2. Map data to CSV rows
     const csvRows = transactions.map(tx => {
       const date = new Date(tx.created_at).toLocaleDateString('en-GB');
-      // Wrap text in quotes to prevent commas in categories from breaking the columns
       return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
     });
 
-    // 3. Combine headers and rows
     const csvContent = [headers.join(','), ...csvRows].join('\n');
     
-    // 4. Trigger the download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -138,9 +135,12 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-slate-900">docwallet</h1>
         </div>
         <div className="flex items-center gap-4">
-          <div className="hidden md:flex items-center gap-2 text-sm text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-            <span>👤</span> {userEmail}
+          
+          {/* UPDATED: Dynamic Name Greeting */}
+          <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-4 py-2 rounded-full">
+            <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
           </div>
+
           <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
             <RefreshCw size={16} /> Refresh
           </button>
@@ -155,21 +155,21 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <p className="text-sm font-medium text-slate-500 mb-2">Total Balance</p>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalBalance.toLocaleString()}</h2>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalBalance.toLocaleString('en-IN')}</h2>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp size={18} className="text-emerald-500" />
               <p className="text-sm font-medium text-emerald-600">Income</p>
             </div>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalIncome.toLocaleString()}</h2>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalIncome.toLocaleString('en-IN')}</h2>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <TrendingDown size={18} className="text-rose-500" />
               <p className="text-sm font-medium text-rose-600">Expenses</p>
             </div>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalExpense.toLocaleString()}</h2>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalExpense.toLocaleString('en-IN')}</h2>
           </div>
         </div>
 
@@ -188,7 +188,6 @@ export default function DashboardPage() {
               />
             </div>
             
-            {/* NEW EXPORT BUTTON */}
             <button 
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
@@ -241,7 +240,7 @@ export default function DashboardPage() {
                       <td className={`p-4 text-right font-bold ${
                         tx.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
-                        {tx.type === 'Income' ? '+' : '-'}₹{tx.amount}
+                        {tx.type === 'Income' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-2">
