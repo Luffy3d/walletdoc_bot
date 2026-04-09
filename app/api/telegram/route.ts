@@ -14,9 +14,11 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
+    // Replace this with your actual domain later if you buy one!
+    const DASHBOARD_URL = "https://walletdoc-bot.vercel.app/login";
+
     const payload: any = await req.json();
 
-    // 1. We must allow both text messages AND contact sharing messages
     if (!payload.message) {
       return NextResponse.json({ ok: true });
     }
@@ -26,12 +28,10 @@ export async function POST(req: Request) {
     const lowerText = text.toLowerCase();
     const contact = payload.message.contact;
 
-    // Ignore stickers, images, etc.
     if (!text && !contact) {
       return NextResponse.json({ ok: true }); 
     }
 
-    // 2. Upgraded message sender that supports custom keyboards
     const sendBotMsg = async (msg: string, replyMarkup?: any) => {
       const body: any = { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
       if (replyMarkup) {
@@ -52,26 +52,27 @@ export async function POST(req: Request) {
 
     let userId = device?.user_id;
 
-    // --- NEW: HANDLE INCOMING CONTACT SHARE ---
     if (contact && userId) {
-      // Telegram separates first and last name, so we combine them
       const newName = [contact.first_name, contact.last_name].filter(Boolean).join(' ');
       const newMobile = contact.phone_number;
       
-      // Update the user's secure metadata in Supabase
       await supabase.auth.admin.updateUserById(userId, {
         user_metadata: { full_name: newName, mobile_number: newMobile }
       });
       
-      // Send success message and REMOVE the popup keyboard
       await sendBotMsg(`✅ Profile updated perfectly, *${newName}*!\n\nYou can now start logging transactions. Try saying "Spent ₹500 on fuel".`, { remove_keyboard: true });
       return NextResponse.json({ ok: true });
     }
 
-    // --- /START COMMAND LOGIC ---
+    // --- UPGRADED /START COMMAND ---
     if (lowerText === '/start') {
       if (!userId) {
-        await sendBotMsg(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nPlease enter this ID on your dashboard to link your account.`);
+        // Includes the sleek Inline URL Button
+        await sendBotMsg(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nClick the button below to open your dashboard, create an account, and paste this ID to link your Telegram!`, {
+          inline_keyboard: [[
+            { text: "🌐 Open docwallet Dashboard", url: DASHBOARD_URL }
+          ]]
+        });
       } else {
         const { data: userData } = await supabase.auth.admin.getUserById(userId);
         const fullName = userData?.user?.user_metadata?.full_name;
@@ -79,7 +80,6 @@ export async function POST(req: Request) {
         if (fullName) {
           await sendBotMsg(`Welcome back, *${fullName}*! 👋\n\nI'm ready to log your transactions. Just text me what you spent or earned.\n\n*Available Commands:*\n📊 /summary - Current month totals\n🕒 /recent - Last 5 transactions\n↩️ /undo - Delete the last entry`);
         } else {
-          // --- NEW: SEND THE "SHARE CONTACT" BUTTON ---
           await sendBotMsg(`Welcome back! 👋\n\nI noticed your profile is incomplete. Please tap the button below to securely share your name and number so I can update your account.`, {
             keyboard: [[{ text: "📱 Share My Contact Info", request_contact: true }]],
             resize_keyboard: true,
@@ -91,7 +91,11 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      await sendBotMsg('❌ *Account Not Linked*\n\nPlease log in to the docwallet dashboard and link your Telegram account to start tracking transactions.');
+      await sendBotMsg('❌ *Account Not Linked*\n\nPlease log in to the docwallet dashboard and link your Telegram account to start tracking transactions.', {
+        inline_keyboard: [[
+          { text: "🌐 Open Dashboard", url: DASHBOARD_URL }
+        ]]
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -134,7 +138,7 @@ export async function POST(req: Request) {
       }
 
       const balance = income - expense;
-      await sendBotMsg(`📊 *This Month's Summary*\n\n📈 *Income:* ₹${income.toLocaleString()}\n📉 *Expenses:* ₹${expense.toLocaleString()}\n💰 *Net Balance:* ₹${balance.toLocaleString()}`);
+      await sendBotMsg(`📊 *This Month's Summary*\n\n📈 *Income:* ₹${income.toLocaleString('en-IN')}\n📉 *Expenses:* ₹${expense.toLocaleString('en-IN')}\n💰 *Net Balance:* ₹${balance.toLocaleString('en-IN')}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -154,7 +158,7 @@ export async function POST(req: Request) {
       let msg = `🗓️ *Last 5 Transactions*\n\n`;
       recentTx.forEach(tx => {
         const icon = tx.type === 'Income' ? '🟢' : '🔴';
-        msg += `${icon} ₹${tx.amount} - ${tx.category}\n`;
+        msg += `${icon} ₹${tx.amount.toLocaleString('en-IN')} - ${tx.category}\n`;
       });
       
       await sendBotMsg(msg);
@@ -162,10 +166,12 @@ export async function POST(req: Request) {
     }
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // AI PROMPT UPGRADED: Explicit instruction for random non-financial text
     const prompt = `
       Extract ALL financial transaction details from the following text: "${text}"
       
-      You MUST return a JSON ARRAY of objects. Even if there is only one transaction, put it inside an array [].
+      If the text does NOT contain any financial transactions, return an empty array [].
+      Otherwise, return a JSON ARRAY of objects. Even if there is only one transaction, put it inside an array [].
       Each object must have these exact fields:
       - amount (number)
       - type (string, strictly either "Income" or "Expense")
@@ -202,7 +208,13 @@ export async function POST(req: Request) {
         parsedData = [parsedData];
       }
     } catch (e) {
-      await sendBotMsg('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies and received ₹1000 from John"');
+      await sendBotMsg("I didn't detect any transaction details in your message. 🤷‍♂️\n\nPlease format it like: *'Spent ₹500 on food'* or *'Received ₹1000 from client'*.");
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- NEW: CATCH EMPTY RESULTS (RANDOM MESSAGES) ---
+    if (parsedData.length === 0) {
+      await sendBotMsg("I didn't detect any financial transactions in that message. 🤷‍♂️\n\nJust tell me what you spent or earned! (e.g., *'Paid ₹250 for coffee'* or *'Received ₹5000 consultation fee'*).");
       return NextResponse.json({ ok: true });
     }
 
@@ -223,7 +235,7 @@ export async function POST(req: Request) {
     } else {
       let successMessage = `✅ *Saved ${parsedData.length} Transaction${parsedData.length > 1 ? 's' : ''}!*\n\n`;
       parsedData.forEach((tx) => {
-        successMessage += `*${tx.type}:* ₹${tx.amount} (${tx.category})\n`;
+        successMessage += `*${tx.type}:* ₹${tx.amount.toLocaleString('en-IN')} (${tx.category})\n`;
       });
       await sendBotMsg(successMessage);
     }
