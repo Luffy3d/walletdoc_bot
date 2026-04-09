@@ -37,7 +37,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- CRITICAL FIX: Restored your original 'telegram_devices' lookup ---
     let { data: device } = await supabase
       .from('telegram_devices')
       .select('user_id')
@@ -51,7 +50,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- /UNDO COMMAND ---
     if (lowerText === '/undo') {
       const { data: lastTx } = await supabase
         .from('transactions')
@@ -70,7 +68,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- AI EXTRACTION (Upgraded for Multiple Transactions & Specific Context) ---
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const prompt = `
       Extract ALL financial transaction details from the following text: "${text}"
@@ -79,4 +76,57 @@ export async function POST(req: Request) {
       Each object must have these exact fields:
       - amount (number)
       - type (string, strictly either "Income" or "Expense")
-      - category (string, be HIGHLY SPECIFIC and preserve the context. E
+      - category (string, be HIGHLY SPECIFIC and preserve the context. E.g., instead of generic "Loan Repayment", use "Car EMI". Instead of generic "Vehicle", use "Bike Service" or "Car Fuel".)
+      - entity_source (string, the recipient or sender, or the specific object involved if no person/company is named)
+
+      If ambiguous, make your best guess. 
+      Example outputs: 
+      [
+        {"amount": 22000, "type": "Expense", "category": "Car EMI", "entity_source": "Bank"},
+        {"amount": 500, "type": "Expense", "category": "Food & Beverage", "entity_source": "Restaurant"}
+      ]
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    let jsonText = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    let parsedData: any[];
+    try {
+      parsedData = JSON.parse(jsonText);
+      if (!Array.isArray(parsedData)) {
+        parsedData = [parsedData];
+      }
+    } catch (e) {
+      await sendBotMsg('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies and received ₹1000 from John"');
+      return NextResponse.json({ ok: true });
+    }
+
+    const insertData = parsedData.map((tx) => ({
+      user_id: userId,
+      type: tx.type,
+      amount: tx.amount,
+      category: tx.category,
+      entity_source: tx.entity_source,
+      raw_text: text
+    }));
+
+    const { error: txError } = await supabase.from('transactions').insert(insertData);
+
+    if (txError) {
+      console.error('Supabase error:', txError);
+      await sendBotMsg("Sorry, I couldn't save those transactions. Please check your dashboard.");
+    } else {
+      let successMessage = `✅ *Saved ${parsedData.length} Transaction${parsedData.length > 1 ? 's' : ''}!*\n\n`;
+      parsedData.forEach((tx) => {
+        successMessage += `*${tx.type}:* ₹${tx.amount} (${tx.category})\n`;
+      });
+      await sendBotMsg(successMessage);
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Error handling telegram webhook:', error);
+    return NextResponse.json({ ok: true }); 
+  }
+}
