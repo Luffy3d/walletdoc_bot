@@ -14,7 +14,6 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
-    // Replace this with your actual domain later if you buy one!
     const DASHBOARD_URL = "https://walletdoc-bot.vercel.app/login";
 
     const payload: any = await req.json();
@@ -64,10 +63,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- UPGRADED /START COMMAND ---
     if (lowerText === '/start') {
       if (!userId) {
-        // Includes the sleek Inline URL Button
         await sendBotMsg(`Welcome to *docwallet*! 🩺\n\nYour Telegram Chat ID is: \`${chatId}\`\n\nClick the button below to open your dashboard, create an account, and paste this ID to link your Telegram!`, {
           inline_keyboard: [[
             { text: "🌐 Open docwallet Dashboard", url: DASHBOARD_URL }
@@ -166,7 +163,6 @@ export async function POST(req: Request) {
     }
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    // AI PROMPT UPGRADED: Explicit instruction for random non-financial text
     const prompt = `
       Extract ALL financial transaction details from the following text: "${text}"
       
@@ -208,13 +204,14 @@ export async function POST(req: Request) {
         parsedData = [parsedData];
       }
     } catch (e) {
-      await sendBotMsg("I didn't detect any transaction details in your message. 🤷‍♂️\n\nPlease format it like: *'Spent ₹500 on food'* or *'Received ₹1000 from client'*.");
+      // UPGRADED ERROR MESSAGE WITH COMMANDS
+      await sendBotMsg("I didn't detect any transaction details in your message. 🤷‍♂️\n\nPlease format it like: *'Spent ₹500 on food'*.\n\n*Available Commands:*\n📊 /summary - Current month totals\n🕒 /recent - Last 5 transactions\n↩️ /undo - Delete the last entry");
       return NextResponse.json({ ok: true });
     }
 
-    // --- NEW: CATCH EMPTY RESULTS (RANDOM MESSAGES) ---
     if (parsedData.length === 0) {
-      await sendBotMsg("I didn't detect any financial transactions in that message. 🤷‍♂️\n\nJust tell me what you spent or earned! (e.g., *'Paid ₹250 for coffee'* or *'Received ₹5000 consultation fee'*).");
+      // UPGRADED EMPTY MESSAGE WITH COMMANDS
+      await sendBotMsg("I didn't detect any financial transactions in that message. 🤷‍♂️\n\nJust tell me what you spent or earned! (e.g., *'Paid ₹250 for coffee'*).\n\n*Available Commands:*\n📊 /summary - Current month totals\n🕒 /recent - Last 5 transactions\n↩️ /undo - Delete the last entry");
       return NextResponse.json({ ok: true });
     }
 
