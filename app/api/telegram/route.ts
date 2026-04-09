@@ -70,51 +70,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // --- AI EXTRACTION ---
+    // --- AI EXTRACTION (Upgraded for Multiple Transactions & Specific Context) ---
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const prompt = `
-      Extract financial transaction details from the following text: "${text}"
-      Return ONLY a JSON object with these fields:
+      Extract ALL financial transaction details from the following text: "${text}"
+      
+      You MUST return a JSON ARRAY of objects. Even if there is only one transaction, put it inside an array [].
+      Each object must have these exact fields:
       - amount (number)
       - type (string, strictly either "Income" or "Expense")
-      - category (string)
-      - entity_source (string)
-
-      If ambiguous, make best guess. Example output: {"amount": 500, "type": "Expense", "category": "Supplies", "entity_source": "Pharmacy"}
-    `;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let jsonText = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    let parsedData;
-    try {
-      parsedData = JSON.parse(jsonText);
-    } catch (e) {
-      await sendBotMsg('I could not understand those financial details. Please try formatting it like: "Spent ₹500 on clinic supplies"');
-      return NextResponse.json({ ok: true });
-    }
-
-    // --- DATABASE INSERT ---
-    const { error: txError } = await supabase.from('transactions').insert([{
-      user_id: userId,
-      type: parsedData.type,
-      amount: parsedData.amount,
-      category: parsedData.category,
-      entity_source: parsedData.entity_source,
-      raw_text: text
-    }]);
-
-    if (txError) {
-      console.error('Supabase error:', txError);
-      await sendBotMsg("Sorry, I couldn't save that transaction. Please check your dashboard.");
-    } else {
-      await sendBotMsg(`✅ *Transaction Saved!*\n\n*Type:* ${parsedData.type}\n*Amount:* ₹${parsedData.amount}\n*Category:* ${parsedData.category}`);
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error('Error handling telegram webhook:', error);
-    return NextResponse.json({ ok: true }); 
-  }
-}
+      - category (string, be HIGHLY SPECIFIC and preserve the context. E
