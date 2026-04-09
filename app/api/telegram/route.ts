@@ -68,6 +68,57 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // --- /SUMMARY COMMAND (Current Month) ---
+    if (lowerText === '/summary') {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+      const { data: monthTx } = await supabase
+        .from('transactions')
+        .select('type, amount')
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonth);
+
+      let income = 0;
+      let expense = 0;
+
+      if (monthTx) {
+        monthTx.forEach(tx => {
+          if (tx.type === 'Income') income += Number(tx.amount);
+          if (tx.type === 'Expense') expense += Number(tx.amount);
+        });
+      }
+
+      const balance = income - expense;
+      await sendBotMsg(`📊 *This Month's Summary*\n\n📈 *Income:* ₹${income.toLocaleString()}\n📉 *Expenses:* ₹${expense.toLocaleString()}\n💰 *Net Balance:* ₹${balance.toLocaleString()}`);
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- /RECENT COMMAND (Last 5 Transactions) ---
+    if (lowerText === '/recent') {
+      const { data: recentTx } = await supabase
+        .from('transactions')
+        .select('type, amount, category')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (!recentTx || recentTx.length === 0) {
+        await sendBotMsg("No recent transactions found.");
+        return NextResponse.json({ ok: true });
+      }
+
+      let msg = `🗓️ *Last 5 Transactions*\n\n`;
+      recentTx.forEach(tx => {
+        const icon = tx.type === 'Income' ? '🟢' : '🔴';
+        msg += `${icon} ₹${tx.amount} - ${tx.category}\n`;
+      });
+      
+      await sendBotMsg(msg);
+      return NextResponse.json({ ok: true });
+    }
+
+    // --- AI EXTRACTION (With 503 Error Handling) ---
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const prompt = `
       Extract ALL financial transaction details from the following text: "${text}"
@@ -87,9 +138,20 @@ export async function POST(req: Request) {
       ]
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let jsonText = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    let jsonText = "";
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      jsonText = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    } catch (aiError: any) {
+      console.error("AI Generation Error:", aiError);
+      if (aiError?.status === 503 || aiError?.message?.includes("503")) {
+        await sendBotMsg("⏳ *Google AI is currently experiencing high traffic.* \n\nPlease wait a few seconds and try sending your transaction again!");
+      } else {
+        await sendBotMsg("⚠️ *Oops!* I had trouble connecting to the AI brain. Please try again.");
+      }
+      return NextResponse.json({ ok: true });
+    }
     
     let parsedData: any[];
     try {
