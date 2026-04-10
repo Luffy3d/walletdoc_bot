@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
     setUserId(user.id)
     setUserEmail(user.email || '')
-    setUserName(user.user_metadata?.full_name || null)
+   setUserName((user.user_metadata?.full_name as string) || null)
 
     const { data: deviceData } = await supabase
       .from('telegram_devices')
