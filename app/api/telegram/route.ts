@@ -42,10 +42,17 @@ async function processWithGroq(userText: string) {
     })
   });
 
-  if (!res.ok) throw new Error("Groq API failed");
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Groq API Status ${res.status}: ${errorText}`);
+  }
 
   const data = await res.json();
-  return JSON.parse(data.choices[0].message.content);
+  try {
+    return JSON.parse(data.choices[0].message.content);
+  } catch (parseError) {
+    throw new Error(`Groq sent invalid JSON: ${data.choices[0].message.content}`);
+  }
 }
 
 // --- AI ENGINE 2: GOOGLE GEMINI (BACKUP) ---
@@ -66,13 +73,19 @@ async function processWithGemini(userText: string) {
     })
   });
 
-  if (!res.ok) throw new Error("Gemini API failed");
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Gemini API Status ${res.status}: ${errorText}`);
+  }
   
   const data = await res.json();
-  const rawJsonString = data.candidates[0].content.parts[0].text.replace(/```json|```/g, '').trim();
-  return JSON.parse(rawJsonString);
+  try {
+    const rawJsonString = data.candidates[0].content.parts[0].text.replace(/```json|```/g, '').trim();
+    return JSON.parse(rawJsonString);
+  } catch (parseError) {
+    throw new Error(`Gemini sent invalid JSON: ${data.candidates?.[0]?.content?.parts?.[0]?.text}`);
+  }
 }
-
 // --- MAIN WEBHOOK HANDLER ---
 export async function POST(req: Request) {
   try {
@@ -110,17 +123,23 @@ export async function POST(req: Request) {
       body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
     })
 
-    // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
+  // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
     let aiResult;
     try {
       aiResult = await processWithGroq(text);
-    } catch (groqError) {
-      console.warn("Groq busy or failed. Falling back to Gemini...");
+    } catch (groqError: any) {
+      console.warn("Groq failed:", groqError.message);
+      
       try {
         aiResult = await processWithGemini(text);
-      } catch (geminiError) {
+      } catch (geminiError: any) {
         console.error("Both AI engines failed!");
-        await sendTelegramMessage(chatId, "⏳ Both of our AI engines are experiencing extreme traffic! Please try again in a minute.");
+        
+        // DEBUG MODE: Text the exact errors to the user!
+        await sendTelegramMessage(
+          chatId, 
+          `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`
+        );
         return NextResponse.json({ status: 'ok' });
       }
     }
