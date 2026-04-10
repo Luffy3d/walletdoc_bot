@@ -161,12 +161,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ok' })
     }
 
-    // Send Success Message
-    const emoji = aiResult.type === 'Income' ? '🟢' : '🔴'
-    await sendTelegramMessage(
-      chatId, 
-      `${emoji} Logged!\n\n${aiResult.type}: ₹${aiResult.amount}\nCategory: ${aiResult.category}\nSource: ${aiResult.entity_source || 'Unknown'}`
-    )
+  // Send Success Message
+    let successMessage = `✅ Transaction Saved!\n\nType: ${aiResult.type}\nAmount: ₹${aiResult.amount}\nCategory: ${aiResult.category}`;
+    
+    // Only show the source if the AI actually found one
+    if (aiResult.entity_source && aiResult.entity_source.toLowerCase() !== 'none' && aiResult.entity_source.toLowerCase() !== 'unknown') {
+      successMessage += `\nSource: ${aiResult.entity_source}`;
+    }
+
+    await sendTelegramMessage(chatId, successMessage);
+
+    return NextResponse.json({ status: 'ok' })
+
+  } catch (error: any) {
+    console.error("Webhook Error:", error)
+    return NextResponse.json({ status: 'error', message: error.message }, { status: 500 })
+  }
+}
 
     return NextResponse.json({ status: 'ok' })
 
