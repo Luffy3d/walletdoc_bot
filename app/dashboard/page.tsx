@@ -242,12 +242,14 @@ export default function DashboardPage() {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-indigo-900">Link your Telegram Account</h3>
-                <p className="text-sm text-indigo-700 mt-1">
-                  Start tracking expenses naturally via chat. Open the docwallet Telegram bot, type <strong>/start</strong>, and paste your Chat ID here.
-                </p>
+                <div className="text-sm text-indigo-700 mt-2 space-y-1">
+                  <p>1. Open our bot here: <a href="https://t.me/walletdoc_bot" target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-2 hover:text-indigo-900 transition-colors">@walletdoc_bot ↗</a></p>
+                  <p>2. Send the message <strong>/start</strong> to the bot.</p>
+                  <p>3. It will reply with your Chat ID. Paste it below!</p>
+                </div>
               </div>
             </div>
-            <div className="flex w-full lg:w-auto gap-2">
+            <div className="flex w-full lg:w-auto gap-2 mt-4 lg:mt-0">
               <input
                 type="text"
                 placeholder="Enter Chat ID..."
@@ -265,7 +267,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
         {/* KPI CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
