@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Wallet, Mail, Loader2, CheckCircle2, User, Phone } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -14,19 +15,21 @@ export default function LoginPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
   const supabase = createClient()
+  const searchParams = useSearchParams()
+  const callbackError = searchParams.get('error')
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    // Construct the absolute URL for the callback
-    const redirectTo = `${window.location.origin}/auth/callback?next=/dashboard`
+    const redirectTo = new URL('/auth/callback', window.location.origin)
+    redirectTo.searchParams.set('next', searchParams.get('next') ?? '/dashboard')
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: redirectTo,
+        emailRedirectTo: redirectTo.toString(),
         data: isSignUp ? {
           full_name: fullName,
           mobile_number: mobile,
@@ -146,6 +149,12 @@ export default function LoginPage() {
           {message && (
             <div className={`rounded-xl p-4 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
               {message.text}
+            </div>
+          )}
+
+          {!message && callbackError === 'magic_link_invalid' && (
+            <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">
+              This magic link is invalid or expired. Request a new link, then open it in the same browser where you started login.
             </div>
           )}
 
