@@ -14,6 +14,7 @@ import {
 
 const COLORS = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
 
+// NEXT.JS 15 FIX: Ensure the component is a standard function without complex props for type checking
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Array<any>>([])
   const [loading, setLoading] = useState(true)
@@ -26,12 +27,13 @@ export default function DashboardPage() {
   const [telegramInput, setTelegramInput] = useState('')
   const [linkingDevice, setLinkingDevice] = useState(false)
   
-  const fileInputRef = useRef<any>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
     checkUserAndFetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const checkUserAndFetchData = async () => {
@@ -138,7 +140,7 @@ export default function DashboardPage() {
       const lines = text.split('\n').filter(line => line.trim() !== '')
       if (lines.length < 2) return alert("Empty CSV.")
 
-      const newTransactions = []
+      const newTransactions: any[] = []
       const csvSplitRegex = new RegExp(',(?=(?:(?:[^"]*"){2})*[^"]*$)')
 
       for (const row of lines.slice(1)) {
@@ -181,7 +183,6 @@ export default function DashboardPage() {
     tx.entity_source?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // Calculate Data for Pie Chart (Expenses by Category)
   const expensesByCategory = transactions
     .filter(t => t.type === 'Expense')
     .reduce((acc: any, t) => {
@@ -192,9 +193,8 @@ export default function DashboardPage() {
   const pieChartData = Object.keys(expensesByCategory).map(key => ({
     name: key,
     value: expensesByCategory[key]
-  })).sort((a, b) => b.value - a.value); // Sort biggest expenses first
+  })).sort((a, b) => b.value - a.value);
 
-  // Calculate Data for Bar Chart (Income vs Expense)
   const barChartData = [
     { name: 'Summary', Income: totalIncome, Expense: totalExpense }
   ];
@@ -209,7 +209,6 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans pb-10">
-      
       {/* HEADER */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
@@ -232,8 +231,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-8">
-        
-        {/* TELEGRAM LINKING CARD */}
         {!isTelegramLinked && (
           <div className="mb-8 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm">
             <div className="flex items-start gap-4">
@@ -267,7 +264,7 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-        {/* KPI CARDS */}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <p className="text-sm font-medium text-slate-500 mb-2">Total Balance</p>
@@ -289,11 +286,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* VISUAL CHARTS SECTION */}
         {transactions.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            
-            {/* Pie Chart */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900 mb-6">Expenses by Category</h3>
               <div className="h-[300px] w-full">
@@ -313,7 +307,7 @@ export default function DashboardPage() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <RechartsTooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                      <RechartsTooltip formatter={(value: any) => `₹${value.toLocaleString()}`} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -323,7 +317,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Bar Chart */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900 mb-6">Cash Flow Overview</h3>
               <div className="h-[300px] w-full">
@@ -332,7 +325,7 @@ export default function DashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} />
                     <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `₹${value}`} />
-                    <RechartsTooltip cursor={{fill: '#f8fafc'}} formatter={(value) => `₹${value.toLocaleString()}`} />
+                    <RechartsTooltip cursor={{fill: '#f8fafc'}} formatter={(value: any) => `₹${value.toLocaleString()}`} />
                     <Legend />
                     <Bar dataKey="Income" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
                     <Bar dataKey="Expense" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={60} />
@@ -343,7 +336,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* TRANSACTIONS TABLE HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h2 className="text-xl font-bold text-slate-900">Recent Transactions</h2>
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -379,11 +371,9 @@ export default function DashboardPage() {
             >
               <Download size={16} /> <span className="hidden sm:inline">Export</span>
             </button>
-            
           </div>
         </div>
 
-        {/* TRANSACTIONS TABLE */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -429,14 +419,12 @@ export default function DashboardPage() {
                           <button 
                             onClick={() => handleEditAmount(tx.id, tx.amount)}
                             className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                            title="Edit Amount"
                           >
                             <Edit2 size={16} />
                           </button>
                           <button 
                             onClick={() => handleDelete(tx.id)}
                             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                            title="Delete"
                           >
                             <Trash2 size={16} />
                           </button>
