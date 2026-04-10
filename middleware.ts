@@ -2,10 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // 1. Create the initial response
   let supabaseResponse = NextResponse.next({
     request,
   })
 
+  // 2. Initialize Supabase with proper cookie handling
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,19 +29,25 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  // 3. Get the user (this also refreshes the session if needed)
   const { data: { user } } = await supabase.auth.getUser()
-
   const path = request.nextUrl.pathname
 
-  // 🚨 THE FIX: ONLY protect the dashboard folder! 🚨
-  // Let everyone see the homepage (/), the login page (/login), and allow the API to work.
+  // 🚨 RECTIFIED LOGIC:
+  // If no user and trying to access dashboard, redirect to login
   if (path.startsWith('/dashboard') && !user) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  // If a logged-in user tries to go to the login page, push them to the dashboard
+  // If user is logged in and tries to hit /login, send them to dashboard
   if (path.startsWith('/login') && user) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    // IMPORTANT: We must return the 'supabaseResponse' or a version of it 
+    // to ensure the session cookies are carried over!
+    return NextResponse.redirect(url)
   }
 
   return supabaseResponse
@@ -48,11 +56,14 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * 1. Ignore all API routes (important for your Telegram bot!)
-     * - Ignore static files (_next/static)
-     * - Ignore images (_next/image)
-     * - Ignore verification files
+     * Match all request paths except for the ones starting with:
+     * - api (Telegram bot)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - Verification files
+     * - Auth callback (Critical: Auth shouldn't be blocked by middleware)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|google03f40a8c91d058dd.html|robots.txt).*)',
+    '/((?!api|auth|_next/static|_next/image|favicon.ico|google03f40a8c91d058dd.html|robots.txt|admin).*)',
   ],
 }
