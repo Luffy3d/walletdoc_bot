@@ -48,12 +48,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images, svgs, etc.
+     * 1. Ignore all API routes (important for your Telegram bot!)
+     * - Ignore static files (_next/static)
+     * - Ignore images (_next/image)
+     * - Ignore verification files
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|google03f40a8c91d058dd.html|robots.txt).*)',
   ],
 }
