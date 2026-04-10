@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 
 export default function DashboardPage() {
-  const [transactions, setTransactions] = useState<any[]>([])
+  const [transactions, setTransactions] = useState<Array<any>>([])
   const [loading, setLoading] = useState(true)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const [telegramInput, setTelegramInput] = useState('')
   const [linkingDevice, setLinkingDevice] = useState(false)
   
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<any>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -159,8 +159,11 @@ export default function DashboardPage() {
       const dataRows = lines.slice(1)
       const newTransactions = []
 
+      // Bulletproof Regex instantiation so Next.js SWC parser doesn't crash
+      const csvSplitRegex = new RegExp(',(?=(?:(?:[^"]*"){2})*[^"]*$)')
+
       for (const row of dataRows) {
-        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim())
+        const cols = row.split(csvSplitRegex).map(col => col.replace(/^"|"$/g, '').trim())
         
         if (cols.length >= 5 && cols[4] !== '') {
           let createdAt = new Date().toISOString()
@@ -221,7 +224,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-10">
+    <main className="min-h-screen bg-slate-50 font-sans pb-10">
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-xl text-white">
@@ -233,4 +236,174 @@ export default function DashboardPage() {
           <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-4 py-2 rounded-full">
             <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
           </div>
-          <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-
+          <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+            <RefreshCw size={16} /> Refresh
+          </button>
+          <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-rose-600 bg-rose-50 border border-rose-100 px-4 py-2 rounded-lg hover:bg-rose-100 transition-colors">
+            <LogOut size={16} /> Logout
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-6 mt-8">
+        {!isTelegramLinked && (
+          <div className="mb-8 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="bg-indigo-100 p-3 rounded-full text-indigo-600 shrink-0">
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-indigo-900">Link your Telegram Account</h3>
+                <p className="text-sm text-indigo-700 mt-1">
+                  Start tracking expenses naturally via chat. Open the docwallet Telegram bot, type <strong>/start</strong>, and paste your Chat ID here.
+                </p>
+              </div>
+            </div>
+            <div className="flex w-full lg:w-auto gap-2">
+              <input
+                type="text"
+                placeholder="Enter Chat ID..."
+                value={telegramInput}
+                onChange={(e) => setTelegramInput(e.target.value)}
+                className="w-full lg:w-48 px-4 py-2 text-sm border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              />
+              <button
+                onClick={handleLinkTelegram}
+                disabled={linkingDevice}
+                className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors whitespace-nowrap disabled:opacity-50"
+              >
+                {linkingDevice ? 'Linking...' : 'Link Bot'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-sm font-medium text-slate-500 mb-2">Total Balance</p>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalBalance.toLocaleString('en-IN')}</h2>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp size={18} className="text-emerald-500" />
+              <p className="text-sm font-medium text-emerald-600">Income</p>
+            </div>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalIncome.toLocaleString('en-IN')}</h2>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingDown size={18} className="text-rose-500" />
+              <p className="text-sm font-medium text-rose-600">Expenses</p>
+            </div>
+            <h2 className="text-3xl font-bold text-slate-900">₹{totalExpense.toLocaleString('en-IN')}</h2>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+          <h2 className="text-xl font-bold text-slate-900">Recent Transactions</h2>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search transactions..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            
+            <input 
+              type="file" 
+              accept=".csv" 
+              ref={fileInputRef}
+              onChange={handleImportCSV} 
+              className="hidden" 
+              id="csv-upload" 
+            />
+            <label 
+              htmlFor="csv-upload"
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <Upload size={16} /> Import
+            </label>
+
+            <button 
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <Download size={16} /> Export
+            </button>
+            
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="p-4">Date</th>
+                  <th className="p-4">Type</th>
+                  <th className="p-4">Category</th>
+                  <th className="p-4">Source</th>
+                  <th className="p-4 text-right">Amount</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-500">
+                      No transactions found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTransactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 text-slate-500">
+                        {new Date(tx.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                          tx.type === 'Income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        }`}>
+                          {tx.type}
+                        </span>
+                      </td>
+                      <td className="p-4 font-medium text-slate-700">{tx.category}</td>
+                      <td className="p-4 text-slate-500">{tx.entity_source || '-'}</td>
+                      <td className={`p-4 text-right font-bold ${
+                        tx.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        {tx.type === 'Income' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => handleEditAmount(tx.id, tx.amount)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                            title="Edit Amount"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(tx.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
