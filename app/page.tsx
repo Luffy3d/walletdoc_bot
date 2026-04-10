@@ -1,198 +1,236 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Wallet, Mail, Loader2, CheckCircle2, User, Phone } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
+import { 
+  Wallet, TrendingUp, TrendingDown, Search, Filter, 
+  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload, MessageCircle 
+} from 'lucide-react'
 
-export default function LoginPage() {
-  const [isSignUp, setIsSignUp] = useState(false)
-  const [email, setEmail] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [mobile, setMobile] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+export default function DashboardPage() {
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   
+  const [isTelegramLinked, setIsTelegramLinked] = useState(true)
+  const [telegramInput, setTelegramInput] = useState('')
+  const [linkingDevice, setLinkingDevice] = useState(false)
+  
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
   const supabase = createClient()
 
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    checkUserAndFetchData()
+  }, [])
+
+  const checkUserAndFetchData = async () => {
     setLoading(true)
-    setMessage(null)
-
-    const authOptions: any = {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      setLoading(false)
+      router.push('/login')
+      return
     }
 
-    if (isSignUp) {
-      authOptions.data = {
-        full_name: fullName,
-        mobile_number: mobile,
-      }
-    }
+    setUserId(user.id)
+    setUserEmail(user.email || '')
+    setUserName(user.user_metadata?.full_name || null)
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: authOptions,
-    })
+    const { data: deviceData } = await supabase
+      .from('telegram_devices')
+      .select('telegram_chat_id')
+      .eq('user_id', user.id)
+      .single()
 
-    if (error) {
-      setMessage({ type: 'error', text: error.message })
+    if (deviceData) {
+      setIsTelegramLinked(true)
     } else {
-      setMessage({ 
-        type: 'success', 
-        text: `Check your email for the magic link to ${isSignUp ? 'create your account' : 'log in'}!` 
-      })
+      setIsTelegramLinked(false)
     }
+
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+
+    if (data) setTransactions(data)
     setLoading(false)
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50"
-      >
-        <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
-            <Wallet size={28} />
-          </div>
-          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
-            Welcome to docwallet
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            {isSignUp ? 'Sign up to start tracking your expenses effortlessly.' : 'Log in to access your dashboard and track your finances.'}
-          </p>
-        </div>
+  const handleLinkTelegram = async () => {
+    if (!telegramInput.trim() || !userId) return
+    setLinkingDevice(true)
+    
+    const { error } = await supabase.from('telegram_devices').insert([
+      { user_id: userId, telegram_chat_id: telegramInput.trim() }
+    ])
 
-        {/* NEW: Sleek Tab Toggle */}
-        <div className="flex p-1 mt-6 bg-slate-100 rounded-xl">
-          <button
-            type="button"
-            onClick={() => { setIsSignUp(false); setMessage(null); }}
-            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
-              !isSignUp 
-                ? 'bg-white text-indigo-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Log In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setIsSignUp(true); setMessage(null); }}
-            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
-              isSignUp 
-                ? 'bg-white text-indigo-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
+    if (error) {
+      alert("Error linking account: " + error.message)
+    } else {
+      alert("✅ Telegram account linked successfully!")
+      setIsTelegramLinked(true)
+      setTelegramInput('')
+    }
+    setLinkingDevice(false)
+  }
 
-        <form className="mt-6 space-y-4" onSubmit={handleAuth}>
-          <AnimatePresence mode="popLayout">
-            {isSignUp && (
-              <motion.div
-                initial={{ opacity: 0, height: 0, y: -10 }}
-                animate={{ opacity: 1, height: 'auto', y: 0 }}
-                exit={{ opacity: 0, height: 0, y: -10 }}
-                className="space-y-4 overflow-hidden"
-              >
-                {/* Full Name Input */}
-                <div className="space-y-2">
-                  <label htmlFor="full-name" className="text-sm font-medium text-slate-700">Full Name</label>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                      <User className="h-5 w-5 text-slate-400" aria-hidden="true" />
-                    </div>
-                    <input
-                      id="full-name"
-                      type="text"
-                      required={isSignUp}
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                      placeholder="e.g. Ranganathan"
-                    />
-                  </div>
-                </div>
+  const handleDelete = async (id: string) => {
+    const confirmDelete = window.confirm("Are you sure you want to delete this transaction?")
+    if (!confirmDelete) return
 
-                {/* Mobile Number Input */}
-                <div className="space-y-2">
-                  <label htmlFor="mobile" className="text-sm font-medium text-slate-700">Mobile Number</label>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                      <Phone className="h-5 w-5 text-slate-400" aria-hidden="true" />
-                    </div>
-                    <input
-                      id="mobile"
-                      type="tel"
-                      required={isSignUp}
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                      placeholder="+91 98765 43210"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+    const { error } = await supabase.from("transactions").delete().eq("id", id)
+    
+    if (error) {
+      alert("Error deleting transaction: " + error.message)
+    } else {
+      setTransactions(transactions.filter((tx) => tx.id !== id))
+    }
+  }
 
-          {/* Email Input (Always Visible) */}
-          <div className="space-y-2">
-            <label htmlFor="email-address" className="text-sm font-medium text-slate-700">
-              Email address
-            </label>
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <Mail className="h-5 w-5 text-slate-400" aria-hidden="true" />
-              </div>
-              <input
-                id="email-address"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                placeholder="you@example.com"
-              />
-            </div>
-          </div>
+  const handleEditAmount = async (id: string, currentAmount: number) => {
+    const newAmount = window.prompt("Enter new amount in ₹:", currentAmount.toString())
+    if (!newAmount || isNaN(Number(newAmount))) return
 
-          {message && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className={`flex items-center gap-2 rounded-xl p-4 text-sm ${
-                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-              }`}
-            >
-              {message.type === 'success' && <CheckCircle2 className="h-5 w-5 shrink-0" />}
-              {message.text}
-            </motion.div>
-          )}
+    const { error } = await supabase
+      .from("transactions")
+      .update({ amount: Number(newAmount) })
+      .eq("id", id)
 
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative flex w-full justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 active:scale-[0.98]"
-            >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                isSignUp ? 'Send Sign Up Link' : 'Send Login Link'
-              )}
-            </button>
-          </div>
-        </form>
+    if (error) {
+      alert("Error updating transaction: " + error.message)
+    } else {
+      checkUserAndFetchData()
+    }
+  }
 
-      </motion.div>
-    </div>
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  const handleExportCSV = () => {
+    if (transactions.length === 0) {
+      alert("No transactions to export!");
+      return;
+    }
+
+    const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
+    const csvRows = transactions.map(tx => {
+      const date = new Date(tx.created_at).toLocaleDateString('en-GB');
+      return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
+    });
+
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `docwallet_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !userId) return
+
+    if (fileInputRef.current) fileInputRef.current.value = ''
+
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const text = e.target?.result as string
+      if (!text) return
+
+      const lines = text.split('\n').filter(line => line.trim() !== '')
+      if (lines.length < 2) {
+        alert("The CSV file seems to be empty.")
+        return
+      }
+
+      const dataRows = lines.slice(1)
+      const newTransactions = []
+
+      for (const row of dataRows) {
+        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim())
+        
+        if (cols.length >= 5 && cols[4] !== '') {
+          let createdAt = new Date().toISOString()
+          const dateParts = cols[0].split('/')
+          if (dateParts.length === 3) {
+            const parsedDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
+            if (!isNaN(parsedDate.getTime())) {
+              createdAt = parsedDate.toISOString()
+            }
+          }
+
+          newTransactions.push({
+            user_id: userId,
+            type: cols[1] === 'Income' ? 'Income' : 'Expense',
+            category: cols[2] || 'Uncategorized',
+            entity_source: cols[3] || null,
+            amount: Number(cols[4]),
+            created_at: createdAt,
+            raw_text: "Imported via CSV"
+          })
+        }
+      }
+
+      if (newTransactions.length > 0) {
+        setLoading(true)
+        const { error } = await supabase.from('transactions').insert(newTransactions)
+        
+        if (error) {
+          alert("Error importing transactions: " + error.message)
+          setLoading(false)
+        } else {
+          alert(`✅ Successfully imported ${newTransactions.length} transactions!`)
+          checkUserAndFetchData()
+        }
+      } else {
+        alert("Could not read any valid transactions. Please make sure it matches the docwallet Export format.")
+      }
+    }
+    
+    reader.readAsText(file)
+  }
+
+  const totalIncome = transactions.filter(t => t.type === 'Income').reduce((sum, t) => sum + Number(t.amount), 0)
+  const totalExpense = transactions.filter(t => t.type === 'Expense').reduce((sum, t) => sum + Number(t.amount), 0)
+  const totalBalance = totalIncome - totalExpense
+
+  const filteredTransactions = transactions.filter(tx => 
+    tx.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tx.entity_source?.toLowerCase().includes(searchQuery.toLowerCase())
   )
-}
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans pb-10">
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl text-white">
+            <Wallet size={24} />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">docwallet</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-4 py-2 rounded-full">
+            <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
+          </div>
+          <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-
