@@ -43,14 +43,11 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-6 text-center relative z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 mb-8">
             <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Powered by Google Gemini AI</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">AI POWERED</span>
           </div>
           
           <h1 className="mx-auto max-w-4xl text-5xl font-extrabold tracking-tight text-slate-900 sm:text-7xl">
-            Track your expenses as easily as <span className="text-indigo-600 relative whitespace-nowrap">
-              texting a friend.
-              <svg className="absolute -bottom-2 left-0 w-full text-indigo-200" viewBox="0 0 100 20" preserveAspectRatio="none"><path d="M0 10 Q 50 20 100 10" fill="transparent" stroke="currentColor" strokeWidth="4"/></svg>
-            </span>
+            Track your expenses as easily as <span className="text-indigo-600">texting a friend.</span>
           </h1>
           
           <p className="mx-auto mt-10 max-w-2xl text-lg leading-relaxed text-slate-600 sm:text-xl">
@@ -61,6 +58,13 @@ export default function LandingPage() {
             <Link href="/login" className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all">
               Start Tracking for Free <ArrowRight size={18} />
             </Link>
+          </div>
+
+          {/* CONTACT INFO ADDED HERE */}
+          <div className="mt-8 text-center text-slate-800 text-base sm:text-lg">
+            <p className="font-medium">Contact for customization</p>
+            <p>Email: <a href="mailto:ranadev4test@gmail.com" className="hover:text-indigo-600 underline underline-offset-4 decoration-slate-300 hover:decoration-indigo-600 transition-colors">ranadev4test@gmail.com</a></p>
+            <p>GitHub: <a href="https://github.com/Luffy3d" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 underline underline-offset-4 decoration-slate-300 hover:decoration-indigo-600 transition-colors">https://github.com/Luffy3d</a></p>
           </div>
 
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm font-medium text-slate-500">
