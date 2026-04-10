@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 // Secure Backend Supabase Client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Must use Service Role key to bypass RLS in the background
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
@@ -27,7 +27,7 @@ async function processWithGroq(userText: string) {
       'Content-Type': 'application/json' 
     },
     body: JSON.stringify({
-      model: "llama-3.1-8b-instant", // <-- THIS IS THE ONLY CHANGE
+      model: "llama-3.1-8b-instant",
       messages: [
         { 
           role: "system", 
@@ -86,6 +86,7 @@ async function processWithGemini(userText: string) {
     throw new Error(`Gemini sent invalid JSON: ${data.candidates?.[0]?.content?.parts?.[0]?.text}`);
   }
 }
+
 // --- MAIN WEBHOOK HANDLER ---
 export async function POST(req: Request) {
   try {
@@ -123,7 +124,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
     })
 
-  // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
+    // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
     let aiResult;
     try {
       aiResult = await processWithGroq(text);
@@ -134,8 +135,6 @@ export async function POST(req: Request) {
         aiResult = await processWithGemini(text);
       } catch (geminiError: any) {
         console.error("Both AI engines failed!");
-        
-        // DEBUG MODE: Text the exact errors to the user!
         await sendTelegramMessage(
           chatId, 
           `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`
@@ -161,7 +160,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ok' })
     }
 
-  // Send Success Message
+    // --- SUCCESS MESSAGE ---
     let successMessage = `✅ Transaction Saved!\n\nType: ${aiResult.type}\nAmount: ₹${aiResult.amount}\nCategory: ${aiResult.category}`;
     
     // Only show the source if the AI actually found one
@@ -170,14 +169,6 @@ export async function POST(req: Request) {
     }
 
     await sendTelegramMessage(chatId, successMessage);
-
-    return NextResponse.json({ status: 'ok' })
-
-  } catch (error: any) {
-    console.error("Webhook Error:", error)
-    return NextResponse.json({ status: 'error', message: error.message }, { status: 500 })
-  }
-}
 
     return NextResponse.json({ status: 'ok' })
 
