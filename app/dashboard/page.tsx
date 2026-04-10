@@ -4,9 +4,15 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { 
-  Wallet, TrendingUp, TrendingDown, Search, Filter, 
-  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload, MessageCircle 
+  Wallet, TrendingUp, TrendingDown, Search, RefreshCw, 
+  LogOut, Trash2, Edit2, Loader2, Download, Upload, MessageCircle 
 } from 'lucide-react'
+import { 
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, 
+  CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer 
+} from 'recharts'
+
+const COLORS = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Array<any>>([])
@@ -48,11 +54,7 @@ export default function DashboardPage() {
       .eq('user_id', user.id)
       .single()
 
-    if (deviceData) {
-      setIsTelegramLinked(true)
-    } else {
-      setIsTelegramLinked(false)
-    }
+    setIsTelegramLinked(!!deviceData)
 
     const { data, error } = await supabase
       .from("transactions")
@@ -88,9 +90,7 @@ export default function DashboardPage() {
 
     const { error } = await supabase.from("transactions").delete().eq("id", id)
     
-    if (error) {
-      alert("Error deleting transaction: " + error.message)
-    } else {
+    if (!error) {
       setTransactions(transactions.filter((tx) => tx.id !== id))
     }
   }
@@ -104,11 +104,7 @@ export default function DashboardPage() {
       .update({ amount: Number(newAmount) })
       .eq("id", id)
 
-    if (error) {
-      alert("Error updating transaction: " + error.message)
-    } else {
-      checkUserAndFetchData()
-    }
+    if (!error) checkUserAndFetchData()
   }
 
   const handleLogout = async () => {
@@ -116,23 +112,14 @@ export default function DashboardPage() {
     router.push('/login')
   }
 
+  // --- CSV FUNCTIONS ---
   const handleExportCSV = () => {
-    if (transactions.length === 0) {
-      alert("No transactions to export!");
-      return;
-    }
-
+    if (transactions.length === 0) return alert("No transactions to export!");
     const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
-    const csvRows = transactions.map(tx => {
-      const date = new Date(tx.created_at).toLocaleDateString('en-GB');
-      return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
-    });
-
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
+    const csvRows = transactions.map(tx => `"${new Date(tx.created_at).toLocaleDateString('en-GB')}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`);
+    const blob = new Blob([[headers.join(','), ...csvRows].join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    link.href = url;
+    link.href = window.URL.createObjectURL(blob);
     link.setAttribute('download', `docwallet_export_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -142,39 +129,27 @@ export default function DashboardPage() {
   const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !userId) return
-
     if (fileInputRef.current) fileInputRef.current.value = ''
 
     const reader = new FileReader()
     reader.onload = async (e) => {
       const text = e.target?.result as string
       if (!text) return
-
       const lines = text.split('\n').filter(line => line.trim() !== '')
-      if (lines.length < 2) {
-        alert("The CSV file seems to be empty.")
-        return
-      }
+      if (lines.length < 2) return alert("Empty CSV.")
 
-      const dataRows = lines.slice(1)
       const newTransactions = []
-
-      // Bulletproof Regex instantiation so Next.js SWC parser doesn't crash
       const csvSplitRegex = new RegExp(',(?=(?:(?:[^"]*"){2})*[^"]*$)')
 
-      for (const row of dataRows) {
+      for (const row of lines.slice(1)) {
         const cols = row.split(csvSplitRegex).map(col => col.replace(/^"|"$/g, '').trim())
-        
         if (cols.length >= 5 && cols[4] !== '') {
           let createdAt = new Date().toISOString()
           const dateParts = cols[0].split('/')
           if (dateParts.length === 3) {
-            const parsedDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
-            if (!isNaN(parsedDate.getTime())) {
-              createdAt = parsedDate.toISOString()
-            }
+            const parsed = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
+            if (!isNaN(parsed.getTime())) createdAt = parsed.toISOString()
           }
-
           newTransactions.push({
             user_id: userId,
             type: cols[1] === 'Income' ? 'Income' : 'Expense',
@@ -189,23 +164,14 @@ export default function DashboardPage() {
 
       if (newTransactions.length > 0) {
         setLoading(true)
-        const { error } = await supabase.from('transactions').insert(newTransactions)
-        
-        if (error) {
-          alert("Error importing transactions: " + error.message)
-          setLoading(false)
-        } else {
-          alert(`✅ Successfully imported ${newTransactions.length} transactions!`)
-          checkUserAndFetchData()
-        }
-      } else {
-        alert("Could not read any valid transactions. Please make sure it matches the docwallet Export format.")
+        await supabase.from('transactions').insert(newTransactions)
+        checkUserAndFetchData()
       }
     }
-    
     reader.readAsText(file)
   }
 
+  // --- DATA CALCULATIONS ---
   const totalIncome = transactions.filter(t => t.type === 'Income').reduce((sum, t) => sum + Number(t.amount), 0)
   const totalExpense = transactions.filter(t => t.type === 'Expense').reduce((sum, t) => sum + Number(t.amount), 0)
   const totalBalance = totalIncome - totalExpense
@@ -214,6 +180,24 @@ export default function DashboardPage() {
     tx.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tx.entity_source?.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Calculate Data for Pie Chart (Expenses by Category)
+  const expensesByCategory = transactions
+    .filter(t => t.type === 'Expense')
+    .reduce((acc: any, t) => {
+      acc[t.category] = (acc[t.category] || 0) + Number(t.amount);
+      return acc;
+    }, {});
+  
+  const pieChartData = Object.keys(expensesByCategory).map(key => ({
+    name: key,
+    value: expensesByCategory[key]
+  })).sort((a, b) => b.value - a.value); // Sort biggest expenses first
+
+  // Calculate Data for Bar Chart (Income vs Expense)
+  const barChartData = [
+    { name: 'Summary', Income: totalIncome, Expense: totalExpense }
+  ];
 
   if (loading) {
     return (
@@ -225,6 +209,8 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans pb-10">
+      
+      {/* HEADER */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-xl text-white">
@@ -237,15 +223,17 @@ export default function DashboardPage() {
             <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
           </div>
           <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-            <RefreshCw size={16} /> Refresh
+            <RefreshCw size={16} /> <span className="hidden sm:inline">Refresh</span>
           </button>
           <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-rose-600 bg-rose-50 border border-rose-100 px-4 py-2 rounded-lg hover:bg-rose-100 transition-colors">
-            <LogOut size={16} /> Logout
+            <LogOut size={16} /> <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-8">
+        
+        {/* TELEGRAM LINKING CARD */}
         {!isTelegramLinked && (
           <div className="mb-8 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm">
             <div className="flex items-start gap-4">
@@ -278,6 +266,7 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* KPI CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <p className="text-sm font-medium text-slate-500 mb-2">Total Balance</p>
@@ -286,19 +275,74 @@ export default function DashboardPage() {
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp size={18} className="text-emerald-500" />
-              <p className="text-sm font-medium text-emerald-600">Income</p>
+              <p className="text-sm font-medium text-emerald-600">Total Income</p>
             </div>
             <h2 className="text-3xl font-bold text-slate-900">₹{totalIncome.toLocaleString('en-IN')}</h2>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <TrendingDown size={18} className="text-rose-500" />
-              <p className="text-sm font-medium text-rose-600">Expenses</p>
+              <p className="text-sm font-medium text-rose-600">Total Expenses</p>
             </div>
             <h2 className="text-3xl font-bold text-slate-900">₹{totalExpense.toLocaleString('en-IN')}</h2>
           </div>
         </div>
 
+        {/* VISUAL CHARTS SECTION */}
+        {transactions.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            
+            {/* Pie Chart */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-bold text-slate-900 mb-6">Expenses by Category</h3>
+              <div className="h-[300px] w-full">
+                {pieChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={100}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {pieChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-slate-400 text-sm">No expense data yet.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Bar Chart */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-bold text-slate-900 mb-6">Cash Flow Overview</h3>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={barChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                    <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `₹${value}`} />
+                    <RechartsTooltip cursor={{fill: '#f8fafc'}} formatter={(value) => `₹${value.toLocaleString()}`} />
+                    <Legend />
+                    <Bar dataKey="Income" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                    <Bar dataKey="Expense" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TRANSACTIONS TABLE HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h2 className="text-xl font-bold text-slate-900">Recent Transactions</h2>
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -325,19 +369,20 @@ export default function DashboardPage() {
               htmlFor="csv-upload"
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
             >
-              <Upload size={16} /> Import
+              <Upload size={16} /> <span className="hidden sm:inline">Import</span>
             </label>
 
             <button 
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
             >
-              <Download size={16} /> Export
+              <Download size={16} /> <span className="hidden sm:inline">Export</span>
             </button>
             
           </div>
         </div>
 
+        {/* TRANSACTIONS TABLE */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -355,7 +400,7 @@ export default function DashboardPage() {
                 {filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-500">
-                      No transactions found.
+                      No transactions found. Log one via Telegram to get started!
                     </td>
                   </tr>
                 ) : (
