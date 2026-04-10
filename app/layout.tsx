@@ -5,8 +5,23 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'docwallet',
-  description: 'Financial tracking for medical professionals.',
+  title: 'docwallet | AI Telegram Expense Tracker',
+  description: 'Track your expenses as easily as texting a friend. AI-powered personal finance dashboard with zero friction.',
+  keywords: 'Telegram expense tracker, AI budget bot, docwallet, personal finance India',
+  
+  // --- GOOGLE VERIFICATION ---
+  verification: {
+    google: '03f40a8c91d058dd',
+  },
+
+  // --- SOCIAL MEDIA PREVIEW (WhatsApp/Telegram/Twitter) ---
+  openGraph: {
+    title: 'docwallet | Text Your Expenses. We Do The Rest.',
+    description: 'The zero-friction expense tracker that lives inside Telegram.',
+    url: 'https://docwallet.vercel.app',
+    siteName: 'docwallet',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
@@ -16,7 +31,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <head>
+        {/* You can add a favicon link here later once we generate your logo */}
+      </head>
+      <body className={inter.className}>
+        {children}
+      </body>
     </html>
   );
 }
