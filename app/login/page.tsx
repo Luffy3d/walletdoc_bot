@@ -20,9 +20,9 @@ export default function LoginPage() {
     setLoading(true)
     setMessage(null)
 
-    // Set up the options. If they are signing up, we attach their Name and Mobile to their Supabase profile data.
+    // UPDATED: Added ?next=/dashboard so Supabase knows where to send them!
     const authOptions: any = {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
     }
 
     if (isSignUp) {
@@ -60,14 +60,40 @@ export default function LoginPage() {
             <Wallet size={28} />
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
-            {isSignUp ? 'Create an account' : 'Welcome back'}
+            Welcome to docwallet
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            {isSignUp ? 'Enter your details to get started with docwallet.' : 'Enter your email to receive a magic link for secure login.'}
+            {isSignUp ? 'Sign up to start tracking your expenses effortlessly.' : 'Log in to access your dashboard and track your finances.'}
           </p>
         </div>
 
-        <form className="mt-8 space-y-4" onSubmit={handleAuth}>
+        {/* NEW: Sleek Tab Toggle */}
+        <div className="flex p-1 mt-6 bg-slate-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(false); setMessage(null); }}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
+              !isSignUp 
+                ? 'bg-white text-indigo-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(true); setMessage(null); }}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
+              isSignUp 
+                ? 'bg-white text-indigo-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleAuth}>
           <AnimatePresence mode="popLayout">
             {isSignUp && (
               <motion.div
@@ -90,7 +116,7 @@ export default function LoginPage() {
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                      placeholder="Dr. John Doe"
+                      placeholder="e.g. John Doe"
                     />
                   </div>
                 </div>
@@ -134,7 +160,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                placeholder="doctor@hospital.com"
+                placeholder="you@example.com"
               />
             </div>
           </div>
@@ -147,7 +173,7 @@ export default function LoginPage() {
                 message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
               }`}
             >
-              {message.type === 'success' && <CheckCircle2 className="h-5 w-5" />}
+              {message.type === 'success' && <CheckCircle2 className="h-5 w-5 shrink-0" />}
               {message.text}
             </motion.div>
           )}
@@ -161,24 +187,11 @@ export default function LoginPage() {
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
-                isSignUp ? 'Send Sign Up Link' : 'Send Magic Link'
+                isSignUp ? 'Send Sign Up Link' : 'Send Login Link'
               )}
             </button>
           </div>
         </form>
-
-        {/* Toggle Button */}
-        <div className="text-center mt-6">
-          <button 
-            onClick={() => {
-              setIsSignUp(!isSignUp)
-              setMessage(null)
-            }}
-            className="text-sm font-medium text-indigo-600 hover:text-indigo-500 transition-colors"
-          >
-            {isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up"}
-          </button>
-        </div>
 
       </motion.div>
     </div>
