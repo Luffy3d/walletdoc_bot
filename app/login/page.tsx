@@ -1,51 +1,64 @@
 'use client'
 
 import { useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Wallet, Mail, Loader2, CheckCircle2, User, Phone } from 'lucide-react'
+import { Wallet, Mail, Loader2, CheckCircle2, KeyRound } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [step, setStep] = useState<'email' | 'otp'>('email')
   const [email, setEmail] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [mobile, setMobile] = useState('')
+  const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
   const supabase = createClient()
-  const searchParams = useSearchParams()
-  const callbackError = searchParams.get('error')
+  const router = useRouter()
 
-  const handleAuth = async (e: React.FormEvent) => {
+  // STEP 1: Request the 6-digit code
+  const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    const redirectTo = new URL('/auth/callback', window.location.origin)
-    redirectTo.searchParams.set('next', searchParams.get('next') ?? '/dashboard')
-
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: redirectTo.toString(),
-        data: isSignUp ? {
-          full_name: fullName,
-          mobile_number: mobile,
-        } : undefined,
+        // We do NOT want a redirect here, we want them to stay and type the code
+        shouldCreateUser: true, 
       },
     })
 
     if (error) {
       setMessage({ type: 'error', text: error.message })
     } else {
-      setMessage({ 
-        type: 'success', 
-        text: `Check your email for the magic link!` 
-      })
+      setMessage({ type: 'success', text: `6-digit code sent to ${email}` })
+      setStep('otp') // Move to the OTP input step
     }
     setLoading(false)
+  }
+
+  // STEP 2: Verify the code and log in directly
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setMessage(null)
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: 'email',
+    })
+
+    if (error) {
+      setMessage({ type: 'error', text: error.message })
+      setLoading(false)
+    } else if (data.session) {
+      // SUCCESS! The session cookie is now safely in the browser.
+      // We can safely route to the dashboard.
+      router.push('/dashboard')
+    }
   }
 
   return (
@@ -60,112 +73,104 @@ export default function LoginPage() {
             <Wallet size={28} />
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
-            Welcome to docwallet
+            docwallet Secure Login
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            {isSignUp ? 'Sign up to start tracking your expenses.' : 'Log in to access your dashboard.'}
+            {step === 'email' ? 'Enter your email to receive a secure login code.' : 'Enter the 6-digit code sent to your email.'}
           </p>
         </div>
 
-        <div className="flex p-1 mt-6 bg-slate-100 rounded-xl">
-          <button
-            type="button"
-            onClick={() => { setIsSignUp(false); setMessage(null); }}
-            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
-              !isSignUp ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Log In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setIsSignUp(true); setMessage(null); }}
-            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
-              isSignUp ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Sign Up
-          </button>
-        </div>
+        <AnimatePresence mode="wait">
+          {step === 'email' ? (
+            <motion.form 
+              key="email-form"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="mt-8 space-y-4" 
+              onSubmit={handleSendCode}
+            >
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Email address</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                    placeholder="you@example.com"
+                  />
+                </div>
+              </div>
 
-        <form className="mt-6 space-y-4" onSubmit={handleAuth}>
-          <AnimatePresence mode="popLayout">
-            {isSignUp && (
-              <motion.div
-                key="signup-fields"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-4 overflow-hidden"
+              {message && (
+                <div className={`rounded-xl p-4 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                  {message.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
               >
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Full Name</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                    <input
-                      type="text"
-                      required={isSignUp}
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                      placeholder="John Doe"
-                    />
-                  </div>
+                {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'Send Login Code'}
+              </button>
+            </motion.form>
+
+          ) : (
+
+            <motion.form 
+              key="otp-form"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="mt-8 space-y-4" 
+              onSubmit={handleVerifyCode}
+            >
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">6-Digit Code</label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} // Only allow numbers
+                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none tracking-widest font-mono text-lg focus:ring-2 focus:ring-indigo-200"
+                    placeholder="123456"
+                  />
                 </div>
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Mobile</label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                    <input
-                      type="tel"
-                      required={isSignUp}
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                      placeholder="+91 98765 43210"
-                    />
-                  </div>
+              {message && (
+                <div className={`rounded-xl p-4 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                  {message.type === 'success' && <CheckCircle2 className="inline mr-2 h-4 w-4" />}
+                  {message.text}
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none focus:ring-2 focus:ring-indigo-200 sm:text-sm"
-                placeholder="you@example.com"
-              />
-            </div>
-          </div>
+              <button
+                type="submit"
+                disabled={loading || otp.length !== 6}
+                className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-all"
+              >
+                {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'Verify & Log In'}
+              </button>
 
-          {message && (
-            <div className={`rounded-xl p-4 text-sm ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-              {message.text}
-            </div>
+              <button
+                type="button"
+                onClick={() => { setStep('email'); setOtp(''); setMessage(null); }}
+                className="w-full text-sm text-slate-500 hover:text-slate-700 mt-2"
+              >
+                ← Back to email
+              </button>
+            </motion.form>
           )}
-
-          {!message && callbackError === 'magic_link_invalid' && (
-            <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">
-              This magic link is invalid or expired. Request a new link, then open it in the same browser where you started login.
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : (isSignUp ? 'Send Sign Up Link' : 'Send Login Link')}
-          </button>
-        </form>
+        </AnimatePresence>
       </motion.div>
     </div>
   )
