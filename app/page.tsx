@@ -41,13 +41,16 @@ export default function LandingPage() {
       <section className="relative overflow-hidden pt-24 pb-20 lg:pt-32 lg:pb-28">
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
         <div className="mx-auto max-w-6xl px-6 text-center relative z-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 mb-8">
-            <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
+          
+          {/* UPDATED BADGE */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 mb-8 shadow-sm">
+            <span className="flex h-2 w-2 rounded-full bg-indigo-400"></span>
             <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">AI POWERED</span>
           </div>
           
+          {/* UPDATED HEADLINE (No striking, uniform color) */}
           <h1 className="mx-auto max-w-4xl text-5xl font-extrabold tracking-tight text-slate-900 sm:text-7xl">
-            Track your expenses as easily as <span className="text-indigo-600">texting a friend.</span>
+            Track your expenses as easily as texting a friend.
           </h1>
           
           <p className="mx-auto mt-10 max-w-2xl text-lg leading-relaxed text-slate-600 sm:text-xl">
@@ -60,14 +63,18 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* CONTACT INFO ADDED HERE */}
-          <div className="mt-8 text-center text-slate-800 text-base sm:text-lg">
-            <p className="font-medium">Contact for customization</p>
-            <p>Email: <a href="mailto:ranadev4test@gmail.com" className="hover:text-indigo-600 underline underline-offset-4 decoration-slate-300 hover:decoration-indigo-600 transition-colors">ranadev4test@gmail.com</a></p>
-            <p>GitHub: <a href="https://github.com/Luffy3d" target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 underline underline-offset-4 decoration-slate-300 hover:decoration-indigo-600 transition-colors">https://github.com/Luffy3d</a></p>
+          {/* CONTACT INFO SECTION */}
+          <div className="mt-10 text-center text-slate-800 text-base sm:text-lg">
+            <p className="font-medium mb-1">Contact for customization</p>
+            <p className="mb-1">
+              Email: <a href="mailto:ranadev4test@gmail.com" className="text-slate-900 font-medium underline underline-offset-4 decoration-slate-300 hover:text-indigo-600 hover:decoration-indigo-600 transition-colors">ranadev4test@gmail.com</a>
+            </p>
+            <p>
+              GitHub: <a href="https://github.com/Luffy3d" target="_blank" rel="noopener noreferrer" className="text-slate-900 font-medium underline underline-offset-4 decoration-slate-300 hover:text-indigo-600 hover:decoration-indigo-600 transition-colors">https://github.com/Luffy3d</a>
+            </p>
           </div>
 
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm font-medium text-slate-500">
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-x-8 gap-y-4 text-sm font-medium text-slate-500">
             <div className="flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-500"/> Takes 2 seconds</div>
             <div className="flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-500"/> No app downloads</div>
             <div className="flex items-center gap-2"><CheckCircle2 size={18} className="text-emerald-500"/> 100% Free to start</div>
