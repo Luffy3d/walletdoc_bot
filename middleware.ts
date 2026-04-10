@@ -32,22 +32,29 @@ export async function middleware(request: NextRequest) {
   // 3. Get the user (this also refreshes the session if needed)
   const { data: { user } } = await supabase.auth.getUser()
   const path = request.nextUrl.pathname
+  const redirectWithSupabaseCookies = (url: URL) => {
+    const response = NextResponse.redirect(url)
+
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      response.cookies.set(cookie)
+    })
+
+    return response
+  }
 
   // 🚨 RECTIFIED LOGIC:
   // If no user and trying to access dashboard, redirect to login
   if (path.startsWith('/dashboard') && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return redirectWithSupabaseCookies(url)
   }
 
   // If user is logged in and tries to hit /login, send them to dashboard
   if (path.startsWith('/login') && user) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
-    // IMPORTANT: We must return the 'supabaseResponse' or a version of it 
-    // to ensure the session cookies are carried over!
-    return NextResponse.redirect(url)
+    return redirectWithSupabaseCookies(url)
   }
 
   return supabaseResponse
