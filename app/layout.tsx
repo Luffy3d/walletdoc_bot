@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     google: '03f40a8c91d058dd',
   },
 
-  // --- SOCIAL MEDIA PREVIEW (WhatsApp/Telegram/Twitter) ---
+  // --- SOCIAL MEDIA PREVIEW ---
   openGraph: {
     title: 'docwallet | Text Your Expenses. We Do The Rest.',
     description: 'The zero-friction expense tracker that lives inside Telegram.',
@@ -31,9 +31,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        {/* You can add a favicon link here later once we generate your logo */}
-      </head>
       <body className={inter.className}>
         {children}
       </body>
