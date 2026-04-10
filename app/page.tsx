@@ -1,383 +1,198 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { 
-  Wallet, TrendingUp, TrendingDown, Search, Filter, 
-  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload, MessageCircle 
-} from 'lucide-react'
+import { Wallet, Mail, Loader2, CheckCircle2, User, Phone } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 
-export default function DashboardPage() {
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+export default function LoginPage() {
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [email, setEmail] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
-  // --- NEW: Telegram Linking State ---
-  const [isTelegramLinked, setIsTelegramLinked] = useState(true) // Default true so it doesn't flash before checking
-  const [telegramInput, setTelegramInput] = useState('')
-  const [linkingDevice, setLinkingDevice] = useState(false)
-  
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const router = useRouter()
   const supabase = createClient()
 
-  useEffect(() => {
-    checkUserAndFetchData()
-  }, [])
-
-  const checkUserAndFetchData = async () => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault()
     setLoading(true)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      setLoading(false)
-      router.push('/login')
-      return
+    setMessage(null)
+
+    const authOptions: any = {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
     }
 
-    setUserId(user.id)
-    setUserEmail(user.email || '')
-    setUserName(user.user_metadata?.full_name || null)
+    if (isSignUp) {
+      authOptions.data = {
+        full_name: fullName,
+        mobile_number: mobile,
+      }
+    }
 
-    // --- NEW: Check if Telegram is linked ---
-    const { data: deviceData } = await supabase
-      .from('telegram_devices')
-      .select('telegram_chat_id')
-      .eq('user_id', user.id)
-      .single()
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: authOptions,
+    })
 
-    if (deviceData) {
-      setIsTelegramLinked(true)
+    if (error) {
+      setMessage({ type: 'error', text: error.message })
     } else {
-      setIsTelegramLinked(false)
+      setMessage({ 
+        type: 'success', 
+        text: `Check your email for the magic link to ${isSignUp ? 'create your account' : 'log in'}!` 
+      })
     }
-
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-
-    if (data) setTransactions(data)
     setLoading(false)
   }
 
-  // --- NEW: Handle Linking Telegram ---
-  const handleLinkTelegram = async () => {
-    if (!telegramInput.trim() || !userId) return
-    setLinkingDevice(true)
-    
-    const { error } = await supabase.from('telegram_devices').insert([
-      { user_id: userId, telegram_chat_id: telegramInput.trim() }
-    ])
-
-    if (error) {
-      alert("Error linking account: " + error.message)
-    } else {
-      alert("✅ Telegram account linked successfully!")
-      setIsTelegramLinked(true)
-      setTelegramInput('')
-    }
-    setLinkingDevice(false)
-  }
-
-  const handleDelete = async (id: string) => {
-    const confirmDelete = window.confirm("Are you sure you want to delete this transaction?")
-    if (!confirmDelete) return
-
-    const { error } = await supabase.from("transactions").delete().eq("id", id)
-    
-    if (error) {
-      alert("Error deleting transaction: " + error.message)
-    } else {
-      setTransactions(transactions.filter((tx) => tx.id !== id))
-    }
-  }
-
-  const handleEditAmount = async (id: string, currentAmount: number) => {
-    const newAmount = window.prompt("Enter new amount in ₹:", currentAmount.toString())
-    if (!newAmount || isNaN(Number(newAmount))) return
-
-    const { error } = await supabase
-      .from("transactions")
-      .update({ amount: Number(newAmount) })
-      .eq("id", id)
-
-    if (error) {
-      alert("Error updating transaction: " + error.message)
-    } else {
-      checkUserAndFetchData()
-    }
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
-  // --- EXPORT FUNCTION ---
-  const handleExportCSV = () => {
-    if (transactions.length === 0) {
-      alert("No transactions to export!");
-      return;
-    }
-
-    const headers = ['Date', 'Type', 'Category', 'Source', 'Amount'];
-    const csvRows = transactions.map(tx => {
-      const date = new Date(tx.created_at).toLocaleDateString('en-GB');
-      return `"${date}","${tx.type}","${tx.category}","${tx.entity_source || ''}","${tx.amount}"`;
-    });
-
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `docwallet_export_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  // --- IMPORT FUNCTION ---
-  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file || !userId) return
-
-    if (fileInputRef.current) fileInputRef.current.value = ''
-
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-      const text = e.target?.result as string
-      if (!text) return
-
-      const lines = text.split('\n').filter(line => line.trim() !== '')
-      if (lines.length < 2) {
-        alert("The CSV file seems to be empty.")
-        return
-      }
-
-      const dataRows = lines.slice(1)
-      const newTransactions = []
-
-      for (const row of dataRows) {
-        const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim())
-        
-        if (cols.length >= 5 && cols[4] !== '') {
-          let createdAt = new Date().toISOString()
-          const dateParts = cols[0].split('/')
-          if (dateParts.length === 3) {
-            const parsedDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
-            if (!isNaN(parsedDate.getTime())) {
-              createdAt = parsedDate.toISOString()
-            }
-          }
-
-          newTransactions.push({
-            user_id: userId,
-            type: cols[1] === 'Income' ? 'Income' : 'Expense',
-            category: cols[2] || 'Uncategorized',
-            entity_source: cols[3] || null,
-            amount: Number(cols[4]),
-            created_at: createdAt,
-            raw_text: "Imported via CSV"
-          })
-        }
-      }
-
-      if (newTransactions.length > 0) {
-        setLoading(true)
-        const { error } = await supabase.from('transactions').insert(newTransactions)
-        
-        if (error) {
-          alert("Error importing transactions: " + error.message)
-          setLoading(false)
-        } else {
-          alert(`✅ Successfully imported ${newTransactions.length} transactions!`)
-          checkUserAndFetchData()
-        }
-      } else {
-        alert("Could not read any valid transactions. Please make sure it matches the docwallet Export format.")
-      }
-    }
-    
-    reader.readAsText(file)
-  }
-
-  // Calculate Totals
-  const totalIncome = transactions.filter(t => t.type === 'Income').reduce((sum, t) => sum + Number(t.amount), 0)
-  const totalExpense = transactions.filter(t => t.type === 'Expense').reduce((sum, t) => sum + Number(t.amount), 0)
-  const totalBalance = totalIncome - totalExpense
-
-  const filteredTransactions = transactions.filter(tx => 
-    tx.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.entity_source?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-10">
-      {/* Top Navbar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-xl text-white">
-            <Wallet size={24} />
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50"
+      >
+        <div className="text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+            <Wallet size={28} />
           </div>
-          <h1 className="text-xl font-bold text-slate-900">docwallet</h1>
+          <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
+            Welcome to docwallet
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">
+            {isSignUp ? 'Sign up to start tracking your expenses effortlessly.' : 'Log in to access your dashboard and track your finances.'}
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex items-center gap-2 text-sm font-medium text-slate-700 bg-slate-100 px-4 py-2 rounded-full">
-            <span>👋</span> Hi, {userName ? userName.split(' ')[0] : userEmail?.split('@')[0]}
-          </div>
-          <button onClick={checkUserAndFetchData} className="flex items-center gap-2 text-sm font-medium text-slate-600 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-            <RefreshCw size={16} /> Refresh
-          </button>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-medium text-rose-600 bg-rose-50 border border-rose-100 px-4 py-2 rounded-lg hover:bg-rose-100 transition-colors">
-            <LogOut size={16} /> Logout
-          </button>
-        </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-6 mt-8">
-        
-        {/* NEW: Telegram Link Banner */}
-        {!isTelegramLinked && (
-          <div className="mb-8 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-start gap-4">
-              <div className="bg-indigo-100 p-3 rounded-full text-indigo-600 shrink-0">
-                <MessageCircle size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-indigo-900">Link your Telegram Account</h3>
-                <p className="text-sm text-indigo-700 mt-1">
-                  Start tracking expenses naturally via chat. Open the docwallet Telegram bot, type <strong>/start</strong>, and paste your Chat ID here.
-                </p>
-              </div>
-            </div>
-            <div className="flex w-full lg:w-auto gap-2">
-              <input
-                type="text"
-                placeholder="Enter Chat ID..."
-                value={telegramInput}
-                onChange={(e) => setTelegramInput(e.target.value)}
-                className="w-full lg:w-48 px-4 py-2 text-sm border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              />
-              <button
-                onClick={handleLinkTelegram}
-                disabled={linkingDevice}
-                className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors whitespace-nowrap disabled:opacity-50"
+        {/* NEW: Sleek Tab Toggle */}
+        <div className="flex p-1 mt-6 bg-slate-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(false); setMessage(null); }}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
+              !isSignUp 
+                ? 'bg-white text-indigo-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Log In
+          </button>
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(true); setMessage(null); }}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all ${
+              isSignUp 
+                ? 'bg-white text-indigo-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <form className="mt-6 space-y-4" onSubmit={handleAuth}>
+          <AnimatePresence mode="popLayout">
+            {isSignUp && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, y: -10 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -10 }}
+                className="space-y-4 overflow-hidden"
               >
-                {linkingDevice ? 'Linking...' : 'Link Bot'}
-              </button>
-            </div>
-          </div>
-        )}
+                {/* Full Name Input */}
+                <div className="space-y-2">
+                  <label htmlFor="full-name" className="text-sm font-medium text-slate-700">Full Name</label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <User className="h-5 w-5 text-slate-400" aria-hidden="true" />
+                    </div>
+                    <input
+                      id="full-name"
+                      type="text"
+                      required={isSignUp}
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                      placeholder="e.g. Ranganathan"
+                    />
+                  </div>
+                </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-sm font-medium text-slate-500 mb-2">Total Balance</p>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalBalance.toLocaleString('en-IN')}</h2>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp size={18} className="text-emerald-500" />
-              <p className="text-sm font-medium text-emerald-600">Income</p>
-            </div>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalIncome.toLocaleString('en-IN')}</h2>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingDown size={18} className="text-rose-500" />
-              <p className="text-sm font-medium text-rose-600">Expenses</p>
-            </div>
-            <h2 className="text-3xl font-bold text-slate-900">₹{totalExpense.toLocaleString('en-IN')}</h2>
-          </div>
-        </div>
+                {/* Mobile Number Input */}
+                <div className="space-y-2">
+                  <label htmlFor="mobile" className="text-sm font-medium text-slate-700">Mobile Number</label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <Phone className="h-5 w-5 text-slate-400" aria-hidden="true" />
+                    </div>
+                    <input
+                      id="mobile"
+                      type="tel"
+                      required={isSignUp}
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                      placeholder="+91 98765 43210"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Search & Filter Header */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <h2 className="text-xl font-bold text-slate-900">Recent Transactions</h2>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search transactions..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          {/* Email Input (Always Visible) */}
+          <div className="space-y-2">
+            <label htmlFor="email-address" className="text-sm font-medium text-slate-700">
+              Email address
+            </label>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Mail className="h-5 w-5 text-slate-400" aria-hidden="true" />
+              </div>
+              <input
+                id="email-address"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 text-slate-900 placeholder-slate-400 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 sm:text-sm"
+                placeholder="you@example.com"
               />
             </div>
-            
-            <input 
-              type="file" 
-              accept=".csv" 
-              ref={fileInputRef}
-              onChange={handleImportCSV} 
-              className="hidden" 
-              id="csv-upload" 
-            />
-            <label 
-              htmlFor="csv-upload"
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              <Upload size={16} /> Import
-            </label>
-
-            <button 
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              <Download size={16} /> Export
-            </button>
-            
           </div>
-        </div>
 
-        {/* Transactions Table */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                <tr>
-                  <th className="p-4">Date</th>
-                  <th className="p-4">Type</th>
-                  <th className="p-4">Category</th>
-                  <th className="p-4">Source</th>
-                  <th className="p-4 text-right">Amount</th>
-                  <th className="p-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500">
-                      No transactions found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTransactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 text-slate-500">
-                        {new Date(tx.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                          tx.type === 'Income' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                        }`}>
-                          {tx.type}
-                        </span>
-                      </td>
-                      <td className="p-
+          {message && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={`flex items-center gap-2 rounded-xl p-4 text-sm ${
+                message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+              }`}
+            >
+              {message.type === 'success' && <CheckCircle2 className="h-5 w-5 shrink-0" />}
+              {message.text}
+            </motion.div>
+          )}
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative flex w-full justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 active:scale-[0.98]"
+            >
+              {loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                isSignUp ? 'Send Sign Up Link' : 'Send Login Link'
+              )}
+            </button>
+          </div>
+        </form>
+
+      </motion.div>
+    </div>
+  )
+}
