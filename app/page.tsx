@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { 
   Wallet, TrendingUp, TrendingDown, Search, Filter, 
-  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload 
+  RefreshCw, LogOut, Trash2, Edit2, Loader2, Download, Upload, MessageCircle 
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -15,6 +15,11 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // --- NEW: Telegram Linking State ---
+  const [isTelegramLinked, setIsTelegramLinked] = useState(true) // Default true so it doesn't flash before checking
+  const [telegramInput, setTelegramInput] = useState('')
+  const [linkingDevice, setLinkingDevice] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
@@ -38,6 +43,19 @@ export default function DashboardPage() {
     setUserEmail(user.email || '')
     setUserName(user.user_metadata?.full_name || null)
 
+    // --- NEW: Check if Telegram is linked ---
+    const { data: deviceData } = await supabase
+      .from('telegram_devices')
+      .select('telegram_chat_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (deviceData) {
+      setIsTelegramLinked(true)
+    } else {
+      setIsTelegramLinked(false)
+    }
+
     const { data, error } = await supabase
       .from("transactions")
       .select("*")
@@ -46,6 +64,25 @@ export default function DashboardPage() {
 
     if (data) setTransactions(data)
     setLoading(false)
+  }
+
+  // --- NEW: Handle Linking Telegram ---
+  const handleLinkTelegram = async () => {
+    if (!telegramInput.trim() || !userId) return
+    setLinkingDevice(true)
+    
+    const { error } = await supabase.from('telegram_devices').insert([
+      { user_id: userId, telegram_chat_id: telegramInput.trim() }
+    ])
+
+    if (error) {
+      alert("Error linking account: " + error.message)
+    } else {
+      alert("✅ Telegram account linked successfully!")
+      setIsTelegramLinked(true)
+      setTelegramInput('')
+    }
+    setLinkingDevice(false)
   }
 
   const handleDelete = async (id: string) => {
@@ -106,12 +143,11 @@ export default function DashboardPage() {
     document.body.removeChild(link);
   }
 
-  // --- NEW IMPORT FUNCTION ---
+  // --- IMPORT FUNCTION ---
   const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !userId) return
 
-    // Reset input so they can upload the same file again if they want
     if (fileInputRef.current) fileInputRef.current.value = ''
 
     const reader = new FileReader()
@@ -119,29 +155,22 @@ export default function DashboardPage() {
       const text = e.target?.result as string
       if (!text) return
 
-      // Split into rows and remove empty lines
       const lines = text.split('\n').filter(line => line.trim() !== '')
       if (lines.length < 2) {
         alert("The CSV file seems to be empty.")
         return
       }
 
-      // Skip the header row (index 0)
       const dataRows = lines.slice(1)
       const newTransactions = []
 
       for (const row of dataRows) {
-        // Smart split that ignores commas inside quotes
         const cols = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(col => col.replace(/^"|"$/g, '').trim())
         
-        // Ensure row has Date, Type, Category, Source, Amount
         if (cols.length >= 5 && cols[4] !== '') {
-          
-          // Try to parse the UK format date (DD/MM/YYYY) back into a standard format
           let createdAt = new Date().toISOString()
           const dateParts = cols[0].split('/')
           if (dateParts.length === 3) {
-            // Convert to YYYY-MM-DD
             const parsedDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`)
             if (!isNaN(parsedDate.getTime())) {
               createdAt = parsedDate.toISOString()
@@ -162,7 +191,6 @@ export default function DashboardPage() {
 
       if (newTransactions.length > 0) {
         setLoading(true)
-        // Bulk insert all rows at once into Supabase
         const { error } = await supabase.from('transactions').insert(newTransactions)
         
         if (error) {
@@ -170,7 +198,6 @@ export default function DashboardPage() {
           setLoading(false)
         } else {
           alert(`✅ Successfully imported ${newTransactions.length} transactions!`)
-          // Refresh the dashboard to show the new data
           checkUserAndFetchData()
         }
       } else {
@@ -178,7 +205,6 @@ export default function DashboardPage() {
       }
     }
     
-    // Trigger the file reading
     reader.readAsText(file)
   }
 
@@ -187,7 +213,6 @@ export default function DashboardPage() {
   const totalExpense = transactions.filter(t => t.type === 'Expense').reduce((sum, t) => sum + Number(t.amount), 0)
   const totalBalance = totalIncome - totalExpense
 
-  // Filter transactions by search
   const filteredTransactions = transactions.filter(tx => 
     tx.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tx.entity_source?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -225,6 +250,40 @@ export default function DashboardPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-6 mt-8">
+        
+        {/* NEW: Telegram Link Banner */}
+        {!isTelegramLinked && (
+          <div className="mb-8 bg-indigo-50 border border-indigo-200 rounded-2xl p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="bg-indigo-100 p-3 rounded-full text-indigo-600 shrink-0">
+                <MessageCircle size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-indigo-900">Link your Telegram Account</h3>
+                <p className="text-sm text-indigo-700 mt-1">
+                  Start tracking expenses naturally via chat. Open the docwallet Telegram bot, type <strong>/start</strong>, and paste your Chat ID here.
+                </p>
+              </div>
+            </div>
+            <div className="flex w-full lg:w-auto gap-2">
+              <input
+                type="text"
+                placeholder="Enter Chat ID..."
+                value={telegramInput}
+                onChange={(e) => setTelegramInput(e.target.value)}
+                className="w-full lg:w-48 px-4 py-2 text-sm border border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              />
+              <button
+                onClick={handleLinkTelegram}
+                disabled={linkingDevice}
+                className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors whitespace-nowrap disabled:opacity-50"
+              >
+                {linkingDevice ? 'Linking...' : 'Link Bot'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -262,7 +321,6 @@ export default function DashboardPage() {
               />
             </div>
             
-            {/* HIDDEN FILE INPUT */}
             <input 
               type="file" 
               accept=".csv" 
@@ -271,8 +329,6 @@ export default function DashboardPage() {
               className="hidden" 
               id="csv-upload" 
             />
-            
-            {/* IMPORT BUTTON */}
             <label 
               htmlFor="csv-upload"
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -280,7 +336,6 @@ export default function DashboardPage() {
               <Upload size={16} /> Import
             </label>
 
-            {/* EXPORT BUTTON */}
             <button 
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
@@ -325,39 +380,4 @@ export default function DashboardPage() {
                           {tx.type}
                         </span>
                       </td>
-                      <td className="p-4 font-medium text-slate-700">{tx.category}</td>
-                      <td className="p-4 text-slate-500">{tx.entity_source || '-'}</td>
-                      <td className={`p-4 text-right font-bold ${
-                        tx.type === 'Income' ? 'text-emerald-600' : 'text-rose-600'
-                      }`}>
-                        {tx.type === 'Income' ? '+' : '-'}₹{tx.amount.toLocaleString('en-IN')}
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button 
-                            onClick={() => handleEditAmount(tx.id, tx.amount)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                            title="Edit Amount"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(tx.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+                      <td className="p-
