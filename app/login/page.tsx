@@ -64,7 +64,9 @@ export default function LoginPage() {
       email,
       token: otp,
       type: 'email',
-   if (error) {
+    }) // ✅ FIX: Added the missing closing bracket and parenthesis here!
+
+    if (error) {
       setMessage({ type: 'error', text: error.message })
       setLoading(false)
     } else if (data.session || data.user) {
@@ -84,7 +86,6 @@ export default function LoginPage() {
       setLoading(false)
     }
   }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
       <motion.div 
