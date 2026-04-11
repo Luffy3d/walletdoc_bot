@@ -53,12 +53,17 @@ export default function LoginPage() {
     if (error) {
       setMessage({ type: 'error', text: error.message })
       setLoading(false)
-    } else if (data.session) {
-      // SUCCESS! The session cookie is securely set. Let's go to the dashboard.
-      router.push('/dashboard')
+    } else if (data.session || data.user) {
+      // Show a success message so the user knows it worked
+      setMessage({ type: 'success', text: 'Verified! Loading your dashboard...' })
+      
+      // 🚨 THE FIX: Use window.location.href instead of router.push
+      window.location.href = '/dashboard'
+    } else {
+      setMessage({ type: 'error', text: 'Something went wrong. Please try again.' })
+      setLoading(false)
     }
   }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
       <motion.div 
