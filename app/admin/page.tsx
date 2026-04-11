@@ -3,11 +3,15 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Loader2, Users, Activity } from 'lucide-react'
+import { Loader2, Users, Activity, ChevronDown, ChevronUp } from 'lucide-react'
 
 export default function AdminDashboard() {
   const [isAuthorized, setIsAuthorized] = useState(false)
+  
+  // States to hold the user data and toggle the table
   const [stats, setStats] = useState({ totalUsers: 0, linkedBots: 0 })
+  const [usersList, setUsersList] = useState<any[]>([])
+  const [showTable, setShowTable] = useState(false)
   const [loadingStats, setLoadingStats] = useState(true)
   
   const supabase = createClient()
@@ -23,28 +27,28 @@ export default function AdminDashboard() {
         return
       }
 
-      // If authorized, reveal the page
       setIsAuthorized(true)
 
-      // 🚨 FETCH STATS FROM SUPABASE
       try {
-        // 1. Fetch total registered users
-        // CHANGE 'users' TO YOUR ACTUAL TABLE NAME
-        const { count: totalUsers } = await supabase
+        // 1. Fetch ALL user data to populate the table
+        const { data: allUsers, count: totalUsers } = await supabase
           .from('users') 
-          .select('*', { count: 'exact', head: true })
+          .select('*', { count: 'exact' })
 
-        // 2. Fetch users with linked telegram bots
-        // CHANGE 'users' AND 'chat_id' TO YOUR ACTUAL TABLE/COLUMN NAMES
+        // 2. Fetch users with linked telegram bots (Using 'tci' from your schema)
         const { count: linkedBots } = await supabase
           .from('users') 
           .select('*', { count: 'exact', head: true })
-          .not('chat_id', 'is', null) 
+          .not('tci', 'is', null) 
 
         setStats({
           totalUsers: totalUsers || 0,
           linkedBots: linkedBots || 0
         })
+        
+        // Save the detailed user data to state
+        setUsersList(allUsers || [])
+        
       } catch (err) {
         console.error("Error fetching stats:", err)
       } finally {
@@ -88,17 +92,24 @@ export default function AdminDashboard() {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-3 mb-6 text-slate-500">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                <Users size={24} />
+          {/* Interactive Card: Click to toggle table */}
+          <div 
+            onClick={() => setShowTable(!showTable)}
+            className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md transition-all group"
+          >
+            <div className="flex items-center justify-between mb-6 text-slate-500">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-100 transition-colors">
+                  <Users size={24} />
+                </div>
+                <h2 className="text-sm font-bold tracking-widest uppercase">Total Registered</h2>
               </div>
-              <h2 className="text-sm font-bold tracking-widest uppercase">Total Registered</h2>
+              {showTable ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </div>
             {loadingStats ? (
               <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
             ) : (
-              <p className="text-6xl font-black text-slate-900">{stats.totalUsers}</p>
+              <p className="text-6xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">{stats.totalUsers}</p>
             )}
           </div>
 
@@ -116,6 +127,59 @@ export default function AdminDashboard() {
             )}
           </div>
         </div>
+
+        {/* Detailed Users Table (Revealed on Click) */}
+        {showTable && (
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm mb-6 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="font-bold text-slate-800">User Directory</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4 font-semibold">Name</th>
+                    <th className="px-6 py-4 font-semibold">Email</th>
+                    <th className="px-6 py-4 font-semibold">Phone</th>
+                    <th className="px-6 py-4 font-semibold">Telegram ID</th>
+                    <th className="px-6 py-4 font-semibold">Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {usersList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                        No users found in database.
+                      </td>
+                    </tr>
+                  ) : (
+                    usersList.map((u, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-slate-900">{u.full_name || 'N/A'}</td>
+                        <td className="px-6 py-4">{u.email || 'N/A'}</td>
+                        {/* Corrected column to match your schema */}
+                        <td className="px-6 py-4">{u.phone_number || 'N/A'}</td>
+                        <td className="px-6 py-4">
+                          {/* Corrected column to use 'tci' */}
+                          {u.tci ? (
+                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                              {u.tci}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic">Not Linked</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 font-semibold text-slate-900">
+                          <span className="text-slate-400 text-sm">Requires DB View</span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <div className="bg-slate-900 p-6 rounded-3xl text-slate-300 shadow-lg">
           <h3 className="text-white font-bold mb-2 flex items-center gap-2">
