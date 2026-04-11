@@ -64,15 +64,21 @@ export default function LoginPage() {
       email,
       token: otp,
       type: 'email',
-    })
-
-    if (error) {
+   if (error) {
       setMessage({ type: 'error', text: error.message })
       setLoading(false)
     } else if (data.session || data.user) {
-      setMessage({ type: 'success', text: 'Verified! Loading your dashboard...' })
-      // 🚨 HARD RELOAD FIX: Ensures cookies are sent to middleware
-      window.location.href = '/dashboard'
+      // Keep the button spinning while routing
+      setLoading(true) 
+      
+      // 🚨 THE SMART REDIRECT: Check if it is the Admin email
+      if (email.toLowerCase() === 'ranadev4test@gmail.com') {
+        setMessage({ type: 'success', text: 'Admin Verified! Loading control panel...' })
+        window.location.href = '/admin'
+      } else {
+        setMessage({ type: 'success', text: 'Verified! Loading your dashboard...' })
+        window.location.href = '/dashboard'
+      }
     } else {
       setMessage({ type: 'error', text: 'Something went wrong. Please try again.' })
       setLoading(false)
