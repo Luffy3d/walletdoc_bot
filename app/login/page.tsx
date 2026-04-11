@@ -16,7 +16,7 @@ export default function LoginPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  // STEP 1: Request the 6-digit code
+  // STEP 1: Request the 8-digit code
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -25,7 +25,6 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        // We do NOT want a redirect here, we want them to stay and type the code
         shouldCreateUser: true, 
       },
     })
@@ -33,8 +32,8 @@ export default function LoginPage() {
     if (error) {
       setMessage({ type: 'error', text: error.message })
     } else {
-      setMessage({ type: 'success', text: `6-digit code sent to ${email}` })
-      setStep('otp') // Move to the OTP input step
+      setMessage({ type: 'success', text: `8-digit code sent to ${email}` })
+      setStep('otp') 
     }
     setLoading(false)
   }
@@ -55,8 +54,7 @@ export default function LoginPage() {
       setMessage({ type: 'error', text: error.message })
       setLoading(false)
     } else if (data.session) {
-      // SUCCESS! The session cookie is now safely in the browser.
-      // We can safely route to the dashboard.
+      // SUCCESS! The session cookie is securely set. Let's go to the dashboard.
       router.push('/dashboard')
     }
   }
@@ -76,7 +74,7 @@ export default function LoginPage() {
             docwallet Secure Login
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            {step === 'email' ? 'Enter your email to receive a secure login code.' : 'Enter the 6-digit code sent to your email.'}
+            {step === 'email' ? 'Enter your email to receive a secure login code.' : 'Enter the 8-digit code sent to your email.'}
           </p>
         </div>
 
@@ -131,17 +129,17 @@ export default function LoginPage() {
               onSubmit={handleVerifyCode}
             >
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">6-Digit Code</label>
+                <label className="text-sm font-medium text-slate-700">8-Digit Code</label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
                   <input
                     type="text"
                     required
-                    maxLength={6}
+                    maxLength={8}
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} // Only allow numbers
                     className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-3 outline-none tracking-widest font-mono text-lg focus:ring-2 focus:ring-indigo-200"
-                    placeholder="123456"
+                    placeholder="12345678"
                   />
                 </div>
               </div>
@@ -155,7 +153,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading || otp.length !== 6}
+                disabled={loading || otp.length !== 8}
                 className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-all"
               >
                 {loading ? <Loader2 className="mx-auto h-5 w-5 animate-spin" /> : 'Verify & Log In'}
