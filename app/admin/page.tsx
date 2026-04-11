@@ -2,94 +2,127 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Users, Activity, ShieldCheck, ArrowLeft, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-
-// 🚨 ADMIN EMAIL - ONLY this email can see this page
-const ADMIN_EMAIL = "ranadev4test@gmail.com" 
+import { Loader2, Users, Activity } from 'lucide-react'
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0 })
-  const [loading, setLoading] = useState(true)
-  const [authorized, setAuthorized] = useState(false)
+  const [isAuthorized, setIsAuthorized] = useState(false)
+  const [stats, setStats] = useState({ totalUsers: 0, linkedBots: 0 })
+  const [loadingStats, setLoadingStats] = useState(true)
+  
   const supabase = createClient()
   const router = useRouter()
 
   useEffect(() => {
-    async function checkAdminAndFetch() {
-      const { data: { user } } = await supabase.auth.getUser()
+    async function verifyAndFetch() {
+      const { data: { user }, error } = await supabase.auth.getUser()
 
-      if (!user || user.email !== ADMIN_EMAIL) {
-        router.push('/') // Kick out non-admins
+      // THE BOUNCER: Kick out unauthorized users
+      if (error || !user || user.email !== 'ranadev4test@gmail.com') {
+        router.replace('/dashboard')
         return
       }
 
-      setAuthorized(true)
+      // If authorized, reveal the page
+      setIsAuthorized(true)
 
-      // Fetch Stats
-      const { count: totalCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-      const { count: activeCount } = await supabase.from('telegram_devices').select('*', { count: 'exact', head: true })
+      // 🚨 FETCH STATS FROM SUPABASE
+      try {
+        // 1. Fetch total registered users
+        // CHANGE 'users' TO YOUR ACTUAL TABLE NAME
+        const { count: totalUsers } = await supabase
+          .from('users') 
+          .select('*', { count: 'exact', head: true })
 
-      setStats({
-        totalUsers: totalCount || 0,
-        activeUsers: activeCount || 0
-      })
-      setLoading(false)
+        // 2. Fetch users with linked telegram bots
+        // CHANGE 'users' AND 'chat_id' TO YOUR ACTUAL TABLE/COLUMN NAMES
+        const { count: linkedBots } = await supabase
+          .from('users') 
+          .select('*', { count: 'exact', head: true })
+          .not('chat_id', 'is', null) 
+
+        setStats({
+          totalUsers: totalUsers || 0,
+          linkedBots: linkedBots || 0
+        })
+      } catch (err) {
+        console.error("Error fetching stats:", err)
+      } finally {
+        setLoadingStats(false)
+      }
     }
 
-    checkAdminAndFetch()
+    verifyAndFetch()
   }, [])
 
-  if (!authorized || loading) {
+  if (!isAuthorized) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-indigo-600" size={40} />
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
       </div>
     )
   }
 
+  // Calculate conversion rate for the Growth Tip
+  const conversionRate = stats.totalUsers > 0 
+    ? Math.round((stats.linkedBots / stats.totalUsers) * 100) 
+    : 0;
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6 lg:p-12 font-sans text-slate-900">
-      <div className="mx-auto max-w-4xl">
-        <header className="mb-10 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <div className="flex items-center gap-2 text-indigo-600 font-bold mb-2">
-              <ShieldCheck size={20} />
-              <span className="uppercase tracking-widest text-xs">Admin Command Center</span>
+            <div className="flex items-center gap-2 text-indigo-600 mb-1">
+              <Activity size={18} />
+              <span className="text-sm font-bold tracking-wider uppercase">Admin Command Center</span>
             </div>
-            <h1 className="text-4xl font-extrabold tracking-tight">docwallet Growth</h1>
+            <h1 className="text-4xl font-extrabold text-slate-900">docwallet Growth</h1>
           </div>
-          <Link href="/dashboard" className="flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-900 transition-all">
-            <ArrowLeft size={16} /> My Dashboard
-          </Link>
-        </header>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Total Users Card */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-              <Users size={24} />
+          <button 
+            onClick={() => router.push('/dashboard')}
+            className="text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+          >
+            ← My Dashboard
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-3 mb-6 text-slate-500">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                <Users size={24} />
+              </div>
+              <h2 className="text-sm font-bold tracking-widest uppercase">Total Registered</h2>
             </div>
-            <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Registered</p>
-            <p className="text-5xl font-black mt-2">{stats.totalUsers}</p>
+            {loadingStats ? (
+              <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
+            ) : (
+              <p className="text-6xl font-black text-slate-900">{stats.totalUsers}</p>
+            )}
           </div>
 
-          {/* Active Bots Card */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Activity size={24} />
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-3 mb-6 text-slate-500">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                <Activity size={24} />
+              </div>
+              <h2 className="text-sm font-bold tracking-widest uppercase">Linked Telegram Bots</h2>
             </div>
-            <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Linked Telegram Bots</p>
-            <p className="text-5xl font-black mt-2">{stats.activeUsers}</p>
+            {loadingStats ? (
+              <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
+            ) : (
+              <p className="text-6xl font-black text-slate-900">{stats.linkedBots}</p>
+            )}
           </div>
         </div>
 
-        <div className="mt-12 rounded-2xl bg-slate-900 p-8 text-white">
-          <h3 className="text-lg font-bold mb-2">Growth Tip 📈</h3>
-          <p className="text-slate-400 text-sm leading-relaxed">
-            Your conversion rate is currently **{stats.totalUsers > 0 ? ((stats.activeUsers / stats.totalUsers) * 100).toFixed(1) : 0}%**. 
-            This represents how many users signed up and actually linked their Telegram bot. Focus on making the "Link Bot" step as easy as possible to increase this number.
+        <div className="bg-slate-900 p-6 rounded-3xl text-slate-300 shadow-lg">
+          <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+            Growth Tip 📈
+          </h3>
+          <p className="text-sm leading-relaxed">
+            Your conversion rate is currently <strong className="text-white">{conversionRate}%</strong>. This represents how many users signed up and actually linked their Telegram bot. Focus on making the "Link Bot" step as easy as possible to increase this number.
           </p>
         </div>
       </div>
