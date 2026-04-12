@@ -31,7 +31,13 @@ async function processWithGroq(userText: string) {
       messages: [
         { 
           role: "system", 
-          content: "You are a JSON-only financial extraction bot. Return ONLY valid JSON with keys: type (Income/Expense), amount (number), category (string), entity_source (string). No extra text." 
+          content: `You are a strict JSON financial extraction bot. 
+          Return ONLY a valid JSON object with a single key "transactions" containing an array of objects.
+          Each object must have: type (strictly "Income", "Expense", or "UNKNOWN"), amount (number), category (string), entity_source (string).
+          Rules:
+          1. If the user lists multiple expenses/incomes, create a separate object for EACH in the array.
+          2. If the user just provides a number without enough context (e.g., "20000"), set type to "UNKNOWN".
+          3. Ignore normal conversation. If no financial data is found, return { "transactions": [] }.` 
         },
         { 
           role: "user", 
@@ -57,12 +63,14 @@ async function processWithGroq(userText: string) {
 
 // --- AI ENGINE 2: GOOGLE GEMINI (BACKUP) ---
 async function processWithGemini(userText: string) {
-  const prompt = `You are a financial tracker. Extract the transaction details from this text: "${userText}". 
-  Return ONLY a valid JSON object with these exact keys:
-  - "type": strictly "Income" or "Expense"
+  const prompt = `You are a financial tracker. Extract transaction details from this text: "${userText}". 
+  Return ONLY a valid JSON object with a single key "transactions" containing an array of objects.
+  Each object must have:
+  - "type": strictly "Income", "Expense", or "UNKNOWN" (use UNKNOWN if the text is just a number without context)
   - "amount": number only
   - "category": string (e.g., Food, Transport, Salary)
   - "entity_source": string (e.g., Uber, Amazon, Client Name)
+  Rule: If there are multiple transactions in the text, separate them into multiple objects in the array.
   Do not include markdown tags like \`\`\`json.`
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
@@ -92,13 +100,18 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     
-    // Ignore edits or non-message updates
     if (!body.message || !body.message.text) {
       return NextResponse.json({ status: 'ignored' })
     }
 
     const chatId = body.message.chat.id.toString()
     const text = body.message.text
+
+    // FIX 1: Catch "Start" command immediately before hitting the AI or DB
+    if (text.trim().toLowerCase() === '/start' || text.trim().toLowerCase() === 'start') {
+      await sendTelegramMessage(chatId, "Welcome to docwallet! 💼\n\nLog your transactions naturally. Try:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'");
+      return NextResponse.json({ status: 'ok' });
+    }
 
     // Check if user is linked in Supabase
     const { data: deviceData } = await supabase
@@ -135,40 +148,54 @@ export async function POST(req: Request) {
         aiResult = await processWithGemini(text);
       } catch (geminiError: any) {
         console.error("Both AI engines failed!");
-        await sendTelegramMessage(
-          chatId, 
-          `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`
-        );
+        await sendTelegramMessage(chatId, `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`);
         return NextResponse.json({ status: 'ok' });
       }
     }
 
-    // Insert into Supabase
-    const { error: insertError } = await supabase
-      .from('transactions')
-      .insert([{
-        user_id: userId,
-        type: aiResult.type,
-        amount: aiResult.amount,
-        category: aiResult.category,
-        entity_source: aiResult.entity_source,
-        raw_text: text
-      }])
+    // Ensure we have an array of transactions to process
+    const transactions = aiResult.transactions || [];
 
-    if (insertError) {
-      await sendTelegramMessage(chatId, "❌ Error saving to database: " + insertError.message)
-      return NextResponse.json({ status: 'ok' })
+    if (transactions.length === 0) {
+      await sendTelegramMessage(chatId, "I couldn't find any financial amounts in that message. Please try again!");
+      return NextResponse.json({ status: 'ok' });
     }
 
-    // --- SUCCESS MESSAGE ---
-    let successMessage = `✅ Transaction Saved!\n\nType: ${aiResult.type}\nAmount: ₹${aiResult.amount}\nCategory: ${aiResult.category}`;
-    
-    // Only show the source if the AI actually found one
-    if (aiResult.entity_source && aiResult.entity_source.toLowerCase() !== 'none' && aiResult.entity_source.toLowerCase() !== 'unknown') {
-      successMessage += `\nSource: ${aiResult.entity_source}`;
+    let successMessage = "";
+    let savedCount = 0;
+
+    // Loop through the array (FIX 2: Handles multiple entries)
+    for (const tx of transactions) {
+      
+      // FIX 3: Catch naked numbers
+      if (tx.type === 'UNKNOWN') {
+        await sendTelegramMessage(chatId, `❓ For ₹${tx.amount}, please specify if it was an Income or Expense. (e.g., 'Spent ₹${tx.amount} on food')`);
+        continue; // Skip inserting this specific one into the database
+      }
+
+      // Insert into Supabase
+      const { error: insertError } = await supabase
+        .from('transactions')
+        .insert([{
+          user_id: userId,
+          type: tx.type,
+          amount: tx.amount,
+          category: tx.category,
+          entity_source: tx.entity_source,
+          raw_text: text
+        }])
+
+      if (insertError) {
+        await sendTelegramMessage(chatId, `❌ Error saving ₹${tx.amount}: ` + insertError.message)
+      } else {
+        savedCount++;
+        successMessage += `✅ Saved: ${tx.type} | ₹${tx.amount} | ${tx.category}\n`;
+      }
     }
 
-    await sendTelegramMessage(chatId, successMessage);
+    if (savedCount > 0) {
+      await sendTelegramMessage(chatId, successMessage);
+    }
 
     return NextResponse.json({ status: 'ok' })
 
