@@ -30,26 +30,21 @@ export default function AdminDashboard() {
       setIsAuthorized(true)
 
       try {
-        // 1. Fetch ALL user data AND their connected transactions to count them
+        // 1. Fetch users, transactions, AND telegram devices from the correct tables
         const { data: allUsers, count: totalUsers } = await supabase
           .from('users') 
-          .select('*, transactions(id, created_at)', { count: 'exact' })
+          .select(`
+            *, 
+            transactions(id, created_at),
+            telegram_devices(telegram_chat_id)
+          `, { count: 'exact' })
 
-        // 2. Fetch users with linked telegram bots
-        const { count: linkedBots } = await supabase
-          .from('users') 
-          .select('*', { count: 'exact', head: true })
-          .not('tci', 'is', null) 
-
-        setStats({
-          totalUsers: totalUsers || 0,
-          linkedBots: linkedBots || 0
-        })
-        
-        // 3. Process the transaction counts for the table
+        // 2. Process the transaction counts and find the linked bots
         const now = new Date()
         const currentMonth = now.getMonth()
         const currentYear = now.getFullYear()
+
+        let activeBotsCount = 0;
 
         const enrichedUsers = (allUsers || []).map(u => {
           const txs = u.transactions || []
@@ -61,11 +56,24 @@ export default function AdminDashboard() {
             return txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear
           }).length
 
+          // Check the telegram_devices table to see if they have a linked chat ID
+          const linkedChatId = u.telegram_devices && u.telegram_devices.length > 0 
+            ? u.telegram_devices[0].telegram_chat_id 
+            : null;
+
+          if (linkedChatId) activeBotsCount++;
+
           return {
             ...u,
             totalEntries,
-            currentMonthEntries
+            currentMonthEntries,
+            active_chat_id: linkedChatId // Save the real chat ID for the table
           }
+        })
+
+        setStats({
+          totalUsers: totalUsers || 0,
+          linkedBots: activeBotsCount
         })
 
         // Sort by users who have the most entries this month
@@ -187,9 +195,10 @@ export default function AdminDashboard() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          {u.tci ? (
+                          {/* Updated to show active_chat_id from telegram_devices */}
+                          {u.active_chat_id ? (
                             <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                              {u.tci}
+                              {u.active_chat_id}
                             </span>
                           ) : (
                             <span className="text-slate-400 italic">Not Linked</span>
