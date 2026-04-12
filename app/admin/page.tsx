@@ -30,12 +30,12 @@ export default function AdminDashboard() {
       setIsAuthorized(true)
 
       try {
-        // 1. Fetch ALL user data to populate the table
+        // 1. Fetch ALL user data AND their connected transactions to count them
         const { data: allUsers, count: totalUsers } = await supabase
           .from('users') 
-          .select('*', { count: 'exact' })
+          .select('*, transactions(id, created_at)', { count: 'exact' })
 
-        // 2. Fetch users with linked telegram bots (Using 'tci' from your schema)
+        // 2. Fetch users with linked telegram bots
         const { count: linkedBots } = await supabase
           .from('users') 
           .select('*', { count: 'exact', head: true })
@@ -46,8 +46,32 @@ export default function AdminDashboard() {
           linkedBots: linkedBots || 0
         })
         
-        // Save the detailed user data to state
-        setUsersList(allUsers || [])
+        // 3. Process the transaction counts for the table
+        const now = new Date()
+        const currentMonth = now.getMonth()
+        const currentYear = now.getFullYear()
+
+        const enrichedUsers = (allUsers || []).map(u => {
+          const txs = u.transactions || []
+          const totalEntries = txs.length
+          
+          // Filter transactions to only count ones from the current month & year
+          const currentMonthEntries = txs.filter((tx: any) => {
+            const txDate = new Date(tx.created_at)
+            return txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear
+          }).length
+
+          return {
+            ...u,
+            totalEntries,
+            currentMonthEntries
+          }
+        })
+
+        // Sort by users who have the most entries this month
+        enrichedUsers.sort((a, b) => b.currentMonthEntries - a.currentMonthEntries)
+
+        setUsersList(enrichedUsers)
         
       } catch (err) {
         console.error("Error fetching stats:", err)
@@ -139,10 +163,10 @@ export default function AdminDashboard() {
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-100">
                   <tr>
                     <th className="px-6 py-4 font-semibold">Name</th>
-                    <th className="px-6 py-4 font-semibold">Email</th>
-                    <th className="px-6 py-4 font-semibold">Phone</th>
+                    <th className="px-6 py-4 font-semibold">Contact Info</th>
                     <th className="px-6 py-4 font-semibold">Telegram ID</th>
-                    <th className="px-6 py-4 font-semibold">Balance</th>
+                    <th className="px-6 py-4 font-semibold">Total Entries</th>
+                    <th className="px-6 py-4 font-semibold">This Month</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -156,11 +180,13 @@ export default function AdminDashboard() {
                     usersList.map((u, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4 font-medium text-slate-900">{u.full_name || 'N/A'}</td>
-                        <td className="px-6 py-4">{u.email || 'N/A'}</td>
-                        {/* Corrected column to match your schema */}
-                        <td className="px-6 py-4">{u.phone_number || 'N/A'}</td>
                         <td className="px-6 py-4">
-                          {/* Corrected column to use 'tci' */}
+                          <div className="flex flex-col">
+                            <span>{u.email || 'N/A'}</span>
+                            <span className="text-xs text-slate-400">{u.phone_number || 'No Phone'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
                           {u.tci ? (
                             <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
                               {u.tci}
@@ -170,7 +196,16 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td className="px-6 py-4 font-semibold text-slate-900">
-                          <span className="text-slate-400 text-sm">Requires DB View</span>
+                          {u.totalEntries}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${
+                            u.currentMonthEntries > 0 
+                              ? 'bg-blue-50 text-blue-700 ring-blue-600/20' 
+                              : 'bg-slate-50 text-slate-600 ring-slate-500/10'
+                          }`}>
+                            {u.currentMonthEntries} logged
+                          </span>
                         </td>
                       </tr>
                     ))
