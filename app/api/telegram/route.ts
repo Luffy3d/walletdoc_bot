@@ -107,28 +107,32 @@ export async function POST(req: Request) {
     const chatId = body.message.chat.id.toString()
     const text = body.message.text
 
-    // FIX 1: Catch "Start" command immediately before hitting the AI or DB
-    if (text.trim().toLowerCase() === '/start' || text.trim().toLowerCase() === 'start') {
-      await sendTelegramMessage(chatId, "Welcome to docwallet! 💼\n\nLog your transactions naturally. Try:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'");
-      return NextResponse.json({ status: 'ok' });
-    }
-
-    // Check if user is linked in Supabase
+    // FIX: 1. Check if user is linked in Supabase FIRST
     const { data: deviceData } = await supabase
       .from('telegram_devices')
       .select('user_id')
       .eq('telegram_chat_id', chatId)
       .single()
 
+    // 2. If they are NOT linked, ALWAYS give them the Chat ID
     if (!deviceData) {
       await sendTelegramMessage(
         chatId, 
-        "Welcome to docwallet! 💼\nPlease go to the website dashboard and enter this Chat ID to link your account:\n\n👉 **" + chatId + "**"
+        "Welcome to docwallet! 💼\n\nPlease go to your website dashboard and enter this exact Chat ID to link your account:\n\n👉 " + chatId
       )
       return NextResponse.json({ status: 'ok' })
     }
 
     const userId = deviceData.user_id
+
+    // 3. If they ARE linked, but they type /start, give them the tips
+    if (text.trim().toLowerCase() === '/start' || text.trim().toLowerCase() === 'start') {
+      await sendTelegramMessage(
+        chatId, 
+        "Welcome back to docwallet! 💼\n\nI'm ready to track your expenses. Log them naturally, for example:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'"
+      );
+      return NextResponse.json({ status: 'ok' });
+    }
 
     // Tell the user we are typing...
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
@@ -136,6 +140,8 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
     })
+
+    // ... (The rest of your AI Redundancy Engine code stays exactly the same below this) ...
 
     // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
     let aiResult;
