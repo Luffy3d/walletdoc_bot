@@ -35,9 +35,10 @@ async function processWithGroq(userText: string) {
           Return ONLY a valid JSON object with a single key "transactions" containing an array of objects.
           Each object must have: type (strictly "Income", "Expense", or "UNKNOWN"), amount (number), category (string), entity_source (string).
           Rules:
-          1. If the user lists multiple expenses/incomes, create a separate object for EACH in the array.
-          2. If the user just provides a number without enough context (e.g., "20000"), set type to "UNKNOWN".
-          3. Ignore normal conversation. If no financial data is found, return { "transactions": [] }.` 
+          1. Handle shorthand numbers accurately (e.g., "10k" = 10000, "1.5k" = 1500, "5L" = 500000).
+          2. For 'category', use the exact purpose stated in the text (e.g., 'webdevelopment', 'dinner'). DO NOT output 'unknown' if a purpose is stated.
+          3. If the user lists multiple entries, create a separate object for EACH.
+          4. If the user provides a number without ANY context (e.g., just "20000"), set type to "UNKNOWN".`
         },
         { 
           role: "user", 
@@ -66,11 +67,11 @@ async function processWithGemini(userText: string) {
   const prompt = `You are a financial tracker. Extract transaction details from this text: "${userText}". 
   Return ONLY a valid JSON object with a single key "transactions" containing an array of objects.
   Each object must have:
-  - "type": strictly "Income", "Expense", or "UNKNOWN" (use UNKNOWN if the text is just a number without context)
-  - "amount": number only
-  - "category": string (e.g., Food, Transport, Salary)
-  - "entity_source": string (e.g., Uber, Amazon, Client Name)
-  Rule: If there are multiple transactions in the text, separate them into multiple objects in the array.
+  - "type": strictly "Income", "Expense", or "UNKNOWN"
+  - "amount": number only (convert shorthand like 10k to 10000)
+  - "category": string (e.g., Food, webdevelopment. NEVER use 'unknown' if the text explains what the money was for)
+  - "entity_source": string (e.g., Uber, Amazon, Saravana)
+  Rule: If there are multiple transactions, separate them into multiple objects.
   Do not include markdown tags like \`\`\`json.`
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
