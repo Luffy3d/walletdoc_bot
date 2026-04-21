@@ -135,9 +135,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: 'ok' });
     }
     
-    // 4. Catch the /undo command so it doesn't break the AI
+    // 4. ACTIVE UNDO LOGIC: Delete the most recent transaction
     if (text.trim().toLowerCase() === '/undo') {
-      await sendTelegramMessage(chatId, "⚠️ The undo feature is coming soon! For now, please delete incorrect entries from your web dashboard.");
+      // Find the most recent transaction for this user
+      const { data: lastTx, error: fetchError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (fetchError || !lastTx) {
+        await sendTelegramMessage(chatId, "🤷‍♂️ I couldn't find any recent transactions to undo.");
+        return NextResponse.json({ status: 'ok' });
+      }
+
+      // Delete the transaction from the database
+      const { error: deleteError } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', lastTx.id);
+
+      if (deleteError) {
+        await sendTelegramMessage(chatId, "❌ Error trying to undo: " + deleteError.message);
+      } else {
+        await sendTelegramMessage(chatId, `🗑️ **Undid your last entry!**\nDeleted: ${lastTx.type} | ₹${lastTx.amount} | ${lastTx.category}`);
+      }
       return NextResponse.json({ status: 'ok' });
     }
     // Tell the user we are typing...
