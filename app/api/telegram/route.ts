@@ -11,10 +11,22 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 
 // Helper function to send Telegram messages
 async function sendTelegramMessage(chatId: string, text: string) {
+  let finalText = text;
+  
+  // UX UPGRADE: Automatically append a clickable /help link to every message
+  // (We skip adding it if it's the help menu, the linking instructions, or if it already has it)
+  if (!text.includes('docwallet Commands:') && !text.includes('exact Chat ID to link') && !text.includes('💡 /help')) {
+    finalText = text + '\n\n💡 /help';
+  }
+
   await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: text }),
+    body: JSON.stringify({ 
+      chat_id: chatId, 
+      text: finalText,
+      parse_mode: 'Markdown' // Added so your bold text actually renders!
+    }),
   })
 }
 
@@ -118,7 +130,7 @@ export async function POST(req: Request) {
     if (!deviceData) {
       await sendTelegramMessage(
         chatId, 
-        "Welcome to docwallet! 💼\n\nPlease go to your website dashboard and enter this exact Chat ID to link your account:\n\n👉 " + chatId
+        "Welcome to docwallet! 💼\n\nPlease go to your website dashboard and enter this exact Chat ID to link your account:\n\n👉 `" + chatId + "`"
       )
       return NextResponse.json({ status: 'ok' })
     }
@@ -133,14 +145,14 @@ export async function POST(req: Request) {
     if (text === '/start' || text === 'start') {
       await sendTelegramMessage(
         chatId, 
-        "Welcome back to docwallet! 💼\n\nI'm ready to track your expenses. Log them naturally, for example:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'\n\nType /help to see all commands."
+        "Welcome back to docwallet! 💼\n\nI'm ready to track your expenses. Log them naturally, for example:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'"
       );
       return NextResponse.json({ status: 'ok' });
     }
 
     // COMMAND: /help
     if (text === '/help') {
-      const helpMsg = `🤖 **docwallet Commands:**\n\n` +
+      const helpMsg = `🤖 *docwallet Commands:*\n\n` +
         `📝 Just type naturally to log a transaction (e.g., "Paid 250 for lunch").\n\n` +
         `/recent - View your last 5 transactions\n` +
         `/summary - View this month's balance\n` +
@@ -173,7 +185,7 @@ export async function POST(req: Request) {
       if (deleteError) {
         await sendTelegramMessage(chatId, "❌ Error trying to undo: " + deleteError.message);
       } else {
-        await sendTelegramMessage(chatId, `🗑️ **Undid your last entry!**\nDeleted: ${lastTx.type} | ₹${lastTx.amount} | ${lastTx.category}`);
+        await sendTelegramMessage(chatId, `🗑️ *Undid your last entry!*\nDeleted: ${lastTx.type} | ₹${lastTx.amount} | ${lastTx.category}`);
       }
       return NextResponse.json({ status: 'ok' });
     }
@@ -192,7 +204,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'ok' });
       }
 
-      let recentMsg = "🕒 **Your Last 5 Transactions:**\n\n";
+      let recentMsg = "🕒 *Your Last 5 Transactions:*\n\n";
       recentTxs.forEach((tx, index) => {
         const icon = tx.type.toLowerCase() === 'income' ? '🟢' : '🔴';
         recentMsg += `${index + 1}. ${icon} ${tx.type} | ₹${tx.amount} | ${tx.category}\n`;
@@ -216,7 +228,7 @@ export async function POST(req: Request) {
         .lte('created_at', lastDay);
 
       if (summaryError || !monthTxs || monthTxs.length === 0) {
-        await sendTelegramMessage(chatId, "📊 **This Month's Summary:**\nYou haven't logged any transactions this month.");
+        await sendTelegramMessage(chatId, "📊 *This Month's Summary:*\nYou haven't logged any transactions this month.");
         return NextResponse.json({ status: 'ok' });
       }
 
@@ -231,11 +243,11 @@ export async function POST(req: Request) {
       const balance = totalIncome - totalExpense;
       const balanceIcon = balance >= 0 ? '💰' : '⚠️';
 
-      let summaryMsg = `📊 **This Month's Summary:**\n\n`;
+      let summaryMsg = `📊 *This Month's Summary:*\n\n`;
       summaryMsg += `🟢 Total Income: ₹${totalIncome}\n`;
       summaryMsg += `🔴 Total Expense: ₹${totalExpense}\n`;
       summaryMsg += `------------------------\n`;
-      summaryMsg += `${balanceIcon} **Net Balance: ₹${balance}**\n`;
+      summaryMsg += `${balanceIcon} *Net Balance: ₹${balance}*\n`;
 
       await sendTelegramMessage(chatId, summaryMsg);
       return NextResponse.json({ status: 'ok' });
@@ -263,7 +275,7 @@ export async function POST(req: Request) {
         aiResult = await processWithGemini(body.message.text);
       } catch (geminiError: any) {
         console.error("Both AI engines failed!");
-        await sendTelegramMessage(chatId, `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`);
+        await sendTelegramMessage(chatId, `🚨 DEBUG LOG 🚨\n\n*Groq Error:*\n${groqError.message}\n\n*Gemini Error:*\n${geminiError.message}`);
         return NextResponse.json({ status: 'ok' });
       }
     }
@@ -304,7 +316,7 @@ export async function POST(req: Request) {
     }
 
     if (savedCount > 0) {
-      await sendTelegramMessage(chatId, successMessage);
+      await sendTelegramMessage(chatId, successMessage.trim());
     }
 
     return NextResponse.json({ status: 'ok' })
