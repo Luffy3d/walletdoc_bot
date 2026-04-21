@@ -1,1 +1,1 @@
-https://www.linkedin.com/in/ranga-nathan-as?utm_source=share_via&utm_content=profile&utm_medium=member_ios
+https://www.linkedin.com/in/ranga-nathan-as
