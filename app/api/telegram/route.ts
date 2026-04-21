@@ -106,16 +106,15 @@ export async function POST(req: Request) {
     }
 
     const chatId = body.message.chat.id.toString()
-    const text = body.message.text
+    const text = body.message.text.trim().toLowerCase()
 
-    // FIX: 1. Check if user is linked in Supabase FIRST
+    // 1. Check if user is linked
     const { data: deviceData } = await supabase
       .from('telegram_devices')
       .select('user_id')
       .eq('telegram_chat_id', chatId)
       .single()
 
-    // 2. If they are NOT linked, ALWAYS give them the Chat ID
     if (!deviceData) {
       await sendTelegramMessage(
         chatId, 
@@ -126,18 +125,33 @@ export async function POST(req: Request) {
 
     const userId = deviceData.user_id
 
-    // 3. If they ARE linked, but they type /start, give them the tips
-    if (text.trim().toLowerCase() === '/start' || text.trim().toLowerCase() === 'start') {
+    // ==========================================
+    // 🚦 COMMAND INTERCEPTORS
+    // ==========================================
+
+    // COMMAND: /start
+    if (text === '/start' || text === 'start') {
       await sendTelegramMessage(
         chatId, 
-        "Welcome back to docwallet! 💼\n\nI'm ready to track your expenses. Log them naturally, for example:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'"
+        "Welcome back to docwallet! 💼\n\nI'm ready to track your expenses. Log them naturally, for example:\n- 'Paid ₹250 for dinner'\n- 'Sent ₹500 to Rangu and ₹200 to Amma'\n\nType /help to see all commands."
       );
       return NextResponse.json({ status: 'ok' });
     }
-    
-    // 4. ACTIVE UNDO LOGIC: Delete the most recent transaction
-    if (text.trim().toLowerCase() === '/undo') {
-      // Find the most recent transaction for this user
+
+    // COMMAND: /help
+    if (text === '/help') {
+      const helpMsg = `🤖 **docwallet Commands:**\n\n` +
+        `📝 Just type naturally to log a transaction (e.g., "Paid 250 for lunch").\n\n` +
+        `/recent - View your last 5 transactions\n` +
+        `/summary - View this month's balance\n` +
+        `/undo - Delete your last transaction\n` +
+        `/help - Show this menu`;
+      await sendTelegramMessage(chatId, helpMsg);
+      return NextResponse.json({ status: 'ok' });
+    }
+
+    // COMMAND: /undo
+    if (text === '/undo') {
       const { data: lastTx, error: fetchError } = await supabase
         .from('transactions')
         .select('*')
@@ -151,7 +165,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ status: 'ok' });
       }
 
-      // Delete the transaction from the database
       const { error: deleteError } = await supabase
         .from('transactions')
         .delete()
@@ -164,6 +177,74 @@ export async function POST(req: Request) {
       }
       return NextResponse.json({ status: 'ok' });
     }
+
+    // COMMAND: /recent
+    if (text === '/recent') {
+      const { data: recentTxs, error: recentError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentError || !recentTxs || recentTxs.length === 0) {
+        await sendTelegramMessage(chatId, "📭 You don't have any recent transactions.");
+        return NextResponse.json({ status: 'ok' });
+      }
+
+      let recentMsg = "🕒 **Your Last 5 Transactions:**\n\n";
+      recentTxs.forEach((tx, index) => {
+        const icon = tx.type.toLowerCase() === 'income' ? '🟢' : '🔴';
+        recentMsg += `${index + 1}. ${icon} ${tx.type} | ₹${tx.amount} | ${tx.category}\n`;
+      });
+      await sendTelegramMessage(chatId, recentMsg);
+      return NextResponse.json({ status: 'ok' });
+    }
+
+    // COMMAND: /summary
+    if (text === '/summary') {
+      const now = new Date();
+      // Get the first and last millisecond of the current month
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
+
+      const { data: monthTxs, error: summaryError } = await supabase
+        .from('transactions')
+        .select('type, amount')
+        .eq('user_id', userId)
+        .gte('created_at', firstDay)
+        .lte('created_at', lastDay);
+
+      if (summaryError || !monthTxs || monthTxs.length === 0) {
+        await sendTelegramMessage(chatId, "📊 **This Month's Summary:**\nYou haven't logged any transactions this month.");
+        return NextResponse.json({ status: 'ok' });
+      }
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+
+      monthTxs.forEach(tx => {
+        if (tx.type.toLowerCase() === 'income') totalIncome += Number(tx.amount);
+        if (tx.type.toLowerCase() === 'expense') totalExpense += Number(tx.amount);
+      });
+
+      const balance = totalIncome - totalExpense;
+      const balanceIcon = balance >= 0 ? '💰' : '⚠️';
+
+      let summaryMsg = `📊 **This Month's Summary:**\n\n`;
+      summaryMsg += `🟢 Total Income: ₹${totalIncome}\n`;
+      summaryMsg += `🔴 Total Expense: ₹${totalExpense}\n`;
+      summaryMsg += `------------------------\n`;
+      summaryMsg += `${balanceIcon} **Net Balance: ₹${balance}**\n`;
+
+      await sendTelegramMessage(chatId, summaryMsg);
+      return NextResponse.json({ status: 'ok' });
+    }
+
+    // ==========================================
+    // 🧠 AI PROCESSING (For normal messages)
+    // ==========================================
+
     // Tell the user we are typing...
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
       method: 'POST',
@@ -171,17 +252,15 @@ export async function POST(req: Request) {
       body: JSON.stringify({ chat_id: chatId, action: 'typing' }),
     })
 
-    // ... (The rest of your AI Redundancy Engine code stays exactly the same below this) ...
-
     // --- REDUNDANCY ENGINE: TRY GROQ, FALLBACK TO GEMINI ---
     let aiResult;
     try {
-      aiResult = await processWithGroq(text);
+      aiResult = await processWithGroq(body.message.text); // Send original casing to AI
     } catch (groqError: any) {
       console.warn("Groq failed:", groqError.message);
       
       try {
-        aiResult = await processWithGemini(text);
+        aiResult = await processWithGemini(body.message.text);
       } catch (geminiError: any) {
         console.error("Both AI engines failed!");
         await sendTelegramMessage(chatId, `🚨 DEBUG LOG 🚨\n\n**Groq Error:**\n${groqError.message}\n\n**Gemini Error:**\n${geminiError.message}`);
@@ -189,7 +268,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Ensure we have an array of transactions to process
     const transactions = aiResult.transactions || [];
 
     if (transactions.length === 0) {
@@ -200,16 +278,12 @@ export async function POST(req: Request) {
     let successMessage = "";
     let savedCount = 0;
 
-    // Loop through the array (FIX 2: Handles multiple entries)
     for (const tx of transactions) {
-      
-      // FIX 3: Catch naked numbers
       if (tx.type === 'UNKNOWN') {
         await sendTelegramMessage(chatId, `❓ For ₹${tx.amount}, please specify if it was an Income or Expense. (e.g., 'Spent ₹${tx.amount} on food')`);
-        continue; // Skip inserting this specific one into the database
+        continue; 
       }
 
-      // Insert into Supabase
       const { error: insertError } = await supabase
         .from('transactions')
         .insert([{
@@ -218,7 +292,7 @@ export async function POST(req: Request) {
           amount: tx.amount,
           category: tx.category,
           entity_source: tx.entity_source,
-          raw_text: text
+          raw_text: body.message.text
         }])
 
       if (insertError) {
