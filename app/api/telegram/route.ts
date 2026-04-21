@@ -134,7 +134,12 @@ export async function POST(req: Request) {
       );
       return NextResponse.json({ status: 'ok' });
     }
-
+    
+    // 4. Catch the /undo command so it doesn't break the AI
+    if (text.trim().toLowerCase() === '/undo') {
+      await sendTelegramMessage(chatId, "⚠️ The undo feature is coming soon! For now, please delete incorrect entries from your web dashboard.");
+      return NextResponse.json({ status: 'ok' });
+    }
     // Tell the user we are typing...
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendChatAction`, {
       method: 'POST',
